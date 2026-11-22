@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 V7 – feladatkártyák az alaki és valódi értékhez; V6 funkciók megőrizve.
+// Számmester 1000 V8 – négy választható kártyapakli; minden korábbi kaland és mentés megőrizve.
 // Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
@@ -25,6 +25,16 @@ const LEVELS = [
 const DIGIT_CARD_MODE = {id:'digitcards',name:'Számjegykártyák',emoji:'🎴',desc:'Kisebb–nagyobb, alaki–valódi érték.'};
 const DIGIT_CARD_KINDS = ['face-min','face-max','real-min','real-max'];
 const DIGIT_CARDS_PER_GAME = 12;
+// V8: külön, egységes szerkezetű 12 lapos paklik.
+const CARD_DECKS = [
+  DIGIT_CARD_MODE,
+  {id:'placecards',name:'Helyiérték-kártyák',emoji:'🏠',desc:'Melyik számjegy áll az adott helyen?',theme:'sky'},
+  {id:'exchangecards',name:'Beváltáskártyák',emoji:'🧮',desc:'Százasok, tízesek és egyesek beváltása.',theme:'sun'},
+  {id:'neighborcards',name:'Szomszédkártyák',emoji:'↔️',desc:'Egyes-, tízes- és százas szomszédok.',theme:'mint'}
+];
+const PLACE_CARD_KINDS=['place-hundreds','place-tens','place-ones'];
+const EXCHANGE_CARD_KINDS=['exchange-plain','exchange-tens','exchange-ones','exchange-mixed'];
+const NEIGHBOR_CARD_KINDS=['neighbor-one-low','neighbor-one-high','neighbor-ten-low','neighbor-ten-high','neighbor-hundred-low','neighbor-hundred-high'];
 const QUESTIONS_PER_GAME = 10;
 const ADVENTURE_QUESTIONS = 5;
 const ADVENTURE_STAGES = MODES.filter(mode => mode.id !== 'mixed');
@@ -50,7 +60,7 @@ const SOUND_SAVE_KEY = 'szammester1000_sound_v5';
 const BOSS_QUESTIONS = 2;
 // V6: önálló hibagyakorlási mentés minden nehézségi szinthez.
 const SMART_SAVE_KEY = 'szammester1000_smart_v6_';
-const SMART_TOPICS = [...ADVENTURE_STAGES, DIGIT_CARD_MODE];
+const SMART_TOPICS = [...ADVENTURE_STAGES, ...CARD_DECKS];
 const SMART_QUEUE_LIMIT = 60;
 const SMART_REVIEWS_TO_MASTER = 2;
 const BOSSES = [
@@ -295,6 +305,116 @@ function makeQuestion(type, level) {
     default: throw new Error('Ismeretlen feladattípus: ' + type);
   }
 }
+// V8: az új feladatkártyák minden nehézségen azonos kérdésformát tartanak.
+function balancedCardKinds(kinds) {
+  const repeats=12/kinds.length;
+  if (!Number.isInteger(repeats)) throw new Error('A pakli elemszámának 12 osztójának kell lennie.');
+  const ordered=[];
+  for(let r=0;r<repeats;r++) {
+    const batch=shuffle(kinds);
+    if(ordered.length && batch[0]===ordered[ordered.length-1]) {
+      const i=batch.findIndex(k=>k!==ordered[ordered.length-1]);
+      [batch[0],batch[i]]=[batch[i],batch[0]];
+    }
+    ordered.push(...batch);
+  }
+  return ordered;
+}
+function makePlaceCard(kind,level) {
+  const placeIndex=PLACE_CARD_KINDS.indexOf(kind);
+  if(placeIndex<0) throw new Error('Ismeretlen helyiérték-kártya');
+  const candidates=level===0?[1,2,3,4,5,6,7,8,9]:[0,1,2,3,4,5,6,7,8,9];
+  const hundreds=rand(level===0?1:1,level===0?6:9);
+  const tens=pick(candidates.filter(n=>n!==hundreds));
+  const ones=pick(candidates.filter(n=>n!==hundreds && n!==tens));
+  const digits=[hundreds,tens,ones];
+  const n=hundreds*100+tens*10+ones;
+  const dIndex=[0,1,2][placeIndex];
+  const short=['százasok','tízesek','egyesek'][placeIndex];
+  return {
+    type:'placecards', cardKind:kind, label:'🏠 Helyiérték-kártya',number:n,
+    title:`Melyik számjegy áll a ${short} helyén?`,
+    hint:'Válaszd ki a három számjegy közül a megfelelőt!',
+    answer:String(digits[dIndex]),options:shuffle(digits.map(String)),
+    tip:'Jobbról balra: egyesek, tízesek, százasok.',
+    explain:`A <strong>${n}</strong> számban a <strong>${short}</strong> helyén a <strong>${digits[dIndex]}</strong> áll.`,
+    cardNote:`A ${short} helyét keresd!`,cardBadge:short.toUpperCase()
+  };
+}
+function makeExchangeCard(kind,level) {
+  if(!EXCHANGE_CARD_KINDS.includes(kind)) throw new Error('Ismeretlen beváltáskártya');
+  // Egy célszámot különféle, pontosan ugyanakkora értékű felbontásban mutatunk.
+  // Így minden leírt felbontás 100 és 999 közötti számot ad.
+  const H=rand(2,level===0?5:9), T=rand(level===0?2:0,9), E=rand(0,9);
+  const n=100*H+10*T+E;
+  const onesExtra=level===0?1:level===1?rand(1,2):rand(1,3);
+  let h=H,t=T,e=E;
+  if(kind==='exchange-tens'){h-=1;t+=10;}
+  if(kind==='exchange-ones'){
+    // Akkor is működik, ha az eredeti tízes kevés: előbb beváltunk egy százast.
+    if(t<onesExtra){h-=1;t+=10;}
+    t-=onesExtra;e+=10*onesExtra;
+  }
+  if(kind==='exchange-mixed'){
+    h-=1;t+=10;
+    t-=onesExtra;e+=10*onesExtra;
+  }
+  if(h<0 || t<0 || e<0) throw new Error('Negatív beváltás');
+  const expression=`${h}sz + ${t}t + ${e}e`;
+  const kindTag={'exchange-plain':'Alapfelbontás','exchange-tens':'Tíz tízes beváltása','exchange-ones':'Egyesek beváltása','exchange-mixed':'Összetett beváltás'}[kind];
+  const distr=[n-100,n+100,n-10,n+10,n-1,n+1,n-20,n+20,n-110,n+110].filter(v=>v>=0&&v<=1000);
+  return {
+    type:'exchangecards',cardKind:kind,label:'🧮 Beváltáskártya',expression,number:n,
+    title:'Melyik számot kapod a beváltás után?',
+    hint:'A sz = százas, t = tízes, e = egyes. Válaszd ki az eredményt!',
+    answer:String(n),options:uniqueChoices(n,distr,4),
+    tip:'Egy százas 100-at, egy tízes 10-et, egy egyes 1-et ér. Add össze!',
+    explain:`<strong>${h} × 100 + ${t} × 10 + ${e} = ${n}</strong>. ${t>=10?'10 tízes = 1 százas. ':''}${e>=10?'10 egyes = 1 tízes.':''}`,
+    cardNote:'Mennyi a teljes érték?',cardBadge:kindTag.toUpperCase()
+  };
+}
+function makeNeighborCard(kind,level) {
+  const parts=kind.split('-');
+  const group=parts[1], side=parts[2];
+  if(!NEIGHBOR_CARD_KINDS.includes(kind)) throw new Error('Ismeretlen szomszédkártya');
+  const step=group==='one'?1:group==='ten'?10:100;
+  const upperLimit=level===0?500:level===1?800:999;
+  const lowerLimit=step===100?101:step===10?11:10;
+  let n=rand(lowerLimit,upperLimit);
+  if(step>1 && n%step===0)n+=1; // a határoló tízes/százas egyértelmű
+  const low=step===1?n-1:Math.floor(n/step)*step;
+  const high=step===1?n+1:low+step;
+  const answer=side==='low'?low:high;
+  const groupHu={one:'egyes',ten:'tízes',hundred:'százas'}[group];
+  const sideHu=side==='low'?'kisebb':'nagyobb';
+  const distractors=[low,high,n,low-step,high+step,n-step,n+step,answer-1,answer+1,answer-10,answer+10]
+      .filter(v=>v>=0&&v<=1000&&v!==answer);
+  return {
+    type:'neighborcards',cardKind:kind,label:'↔️ Szomszédkártya',number:n,n,
+    title:`Melyik a ${n} ${sideHu} ${groupHu} szomszédja?`,
+    hint:'Válaszd ki a megfelelő számot!',
+    answer:String(answer),options:uniqueChoices(answer,distractors,4),
+    tip:step===1?'Az egyes szomszédhoz 1-et lépünk.':
+      `A ${groupHu} szomszédok a számot közrefogó ${step}-asával haladó számok.`,
+    explain:`A <strong>${n}</strong> ${groupHu} szomszédai: <strong>${low}</strong> és <strong>${high}</strong>. A ${sideHu}: <strong>${answer}</strong>.`,
+    cardNote:`${sideHu.toUpperCase()} ${groupHu.toUpperCase()} SZOMSZÉD`,cardBadge:`${groupHu.toUpperCase()} · ${sideHu.toUpperCase()}`
+  };
+}
+function makeTopicCardDeck(mode,level) {
+  const kinds=mode==='placecards'?PLACE_CARD_KINDS:mode==='exchangecards'?EXCHANGE_CARD_KINDS:NEIGHBOR_CARD_KINDS;
+  const generate=mode==='placecards'?makePlaceCard:mode==='exchangecards'?makeExchangeCard:makeNeighborCard;
+  return balancedCardKinds(kinds).map(kind=>generate(kind,level));
+}
+function insertSavedCardQuestions(questions,mode) {
+  const entries=smartRead().queue.filter(e=>e.q.type===mode && questions.some(q=>q.cardKind===e.q.cardKind))
+    .sort((a,b)=>a.successes-b.successes||a.last-b.last).slice(0,2);
+  const used=new Set();
+  entries.forEach(entry=>{
+    const i=questions.findIndex((q,j)=>j>=3&&!used.has(j)&&q.cardKind===entry.q.cardKind);
+    if(i>=0){questions[i]=smartQuestion(entry);used.add(i);}
+  });
+  return questions;
+}
 // CSS-sel rajzolt, animált blokkfigurák: nincs szükség képfájlra.
 function blockAvatar(heroId, size = 'default', celebration = false) {
   const id = HEROES.some(hero => hero.id === heroId) ? heroId : 'fox';
@@ -471,10 +591,27 @@ function renderHome() {
     </section>
     <section class="digitcard-feature" aria-label="Számjegykártyák">
       <div class="digitcard-feature-art" aria-hidden="true"><span>9</span><span>3</span><span>6</span></div>
-      <div><span class="digitcard-kicker">ÚJDONSÁG • V7 🎴</span><h2>Számjegykártya-kihívás</h2>
+      <div><span class="digitcard-kicker">V7 • EREDETI PAKLI 🎴</span><h2>Számjegykártya-kihívás</h2>
         <p>12 kártya · Legkisebb és legnagyobb <strong>alaki</strong> vagy <strong>valódi</strong> érték. A kérdések váltakoznak, a számok mindig újak!</p>
         <p class="digitcard-example">Például: <strong>936</strong> – melyik számjegy valódi értéke a legkisebb?</p></div>
       <button class="digitcard-enter" type="button" data-action="cards">Kártyák indítása →</button>
+    </section>
+    <section class="v8-pack-zone" aria-label="Új matematikai kártyapaklik">
+      <div class="v8-pack-head"><div><span class="v8-kicker">ÚJDONSÁG • V8</span><h2>🎴 Három új feladatkártya-pakli</h2>
+        <p>Válassz témát! Minden pakliban 12 hasonló felépítésű kártya vár rád, változó számokkal és magyarázatokkal.</p></div>
+        <span class="v8-count">3 ÚJ PAKLI</span>
+      </div>
+      <div class="v8-pack-grid">
+        <article class="v8-pack v8-pack-sky"><span class="v8-pack-icon">🏠</span><h3>Helyi érték</h3><p>Melyik számjegy van a százasok, tízesek vagy egyesek helyén?</p>
+          <div class="v8-pack-example">Példa: 736 → tízesek = <strong>3</strong></div><button type="button" data-action="card-deck" data-mode="placecards">Pakli indítása →</button></article>
+        <article class="v8-pack v8-pack-sun"><span class="v8-pack-icon">🧮</span><h3>Beváltások</h3><p>Milyen számot kapsz a százasokból, tízesekből és egyesekből?</p>
+          <div class="v8-pack-example">4sz + 13t + 36e = <strong>566</strong></div><button type="button" data-action="card-deck" data-mode="exchangecards">Pakli indítása →</button></article>
+        <article class="v8-pack v8-pack-mint"><span class="v8-pack-icon">↔️</span><h3>Számszomszédok</h3><p>Keresd az egyes-, tízes- és százas szomszédokat!</p>
+          <div class="v8-pack-example">936 kisebb százas szomszédja: <strong>900</strong></div><button type="button" data-action="card-deck" data-mode="neighborcards">Pakli indítása →</button></article>
+      </div>
+      <div class="v8-pack-level"><strong>🌈 Kártyák nehézsége:</strong>
+        ${LEVELS.map((lev,i)=>`<button type="button" class="level-button ${i===state.level?'selected':''}" data-action="set-level" data-level="${i}" aria-pressed="${i===state.level}">${lev.emoji} ${lev.name}</button>`).join('')}
+      </div>
     </section>
     <section class="smart-feature" aria-label="Okos gyakorlás">
       <div class="smart-feature-mark" aria-hidden="true">🧠</div>
@@ -508,9 +645,10 @@ function renderHome() {
 }
 function beginGame() {
   // A kártyapakli elkülönül a korábbi nyolc gyakorlómódtól és a hét kaputól.
-  if (state.mode==='digitcards') {
+  if (CARD_DECKS.some(d=>d.id===state.mode)) {
     state.playKind='cards';
-    state.questions=insertSavedDigitCards(makeDigitCardDeck(state.level));
+    state.questions=state.mode==='digitcards'?insertSavedDigitCards(makeDigitCardDeck(state.level)):
+      insertSavedCardQuestions(makeTopicCardDeck(state.mode,state.level),state.mode);
     state.view='game';state.index=0;state.stars=0;
     state.autoSmartScheduled=state.questions.filter(q=>q.__smartId).length;
     resetQuestionState();render();return;
@@ -1058,6 +1196,22 @@ function renderDigitCard(q) {
     ${q.options.map(v=>`<button type="button" class="digitcard-choice ${state.locked && String(v)===String(q.answer)?'digitcard-correct':''}" data-action="choose" data-value="${v}" ${state.locked?'disabled':''}>${v}</button>`).join('')}
   </div>`;
 }
+function renderTopicCard(q) {
+  const theme=q.type==='placecards'?'sky':q.type==='exchangecards'?'sun':'mint';
+  const expression=q.expression || '';
+  const primary=expression ? `<span class="v8-expression">${expression}</span>` :
+      `<span class="v8-big-number">${q.number}</span>`;
+  const count=q.options.length;
+  return `<div class="v8-question-card v8-question-${theme}">
+      <div class="v8-question-overline"><span>✦ SZÁMMESTER KÁRTYAPAKLI</span><span>${q.cardBadge}</span></div>
+      <div class="v8-question-value">${primary}</div>
+      <div class="v8-question-bottom">${q.cardNote}</div>
+    </div>
+    <div class="digitcard-choice-label">Kattints a helyes válaszkártyára!</div>
+    <div class="v8-answer-cards ${count===4?'v8-four':''}" role="group" aria-label="Válaszlehetőségek">
+      ${q.options.map(v=>`<button type="button" class="digitcard-choice ${state.locked&&String(v)===String(q.answer)?'digitcard-correct':''}" data-action="choose" data-value="${v}" ${state.locked?'disabled':''}>${v}</button>`).join('')}
+    </div>`;
+}
 function renderQuestionContents(q) {
   switch (q.type) {
     case 'order': return renderOrder(q);
@@ -1067,6 +1221,7 @@ function renderQuestionContents(q) {
     case 'exchange': return renderExchange(q);
     case 'line': return renderNumberline(q);
     case 'digitcards': return renderDigitCard(q);
+    case 'placecards': case 'exchangecards': case 'neighborcards': return renderTopicCard(q);
     default: return '';
   }
 }
@@ -1083,7 +1238,7 @@ function renderGame() {
   app.innerHTML = `<div class="game-wrap ${bossMode?'game-boss':''}">
     <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure'||bossMode ? 'map' : reviewing ? 'review-home' : 'home'}">← ${state.playKind === 'adventure'||bossMode ? 'Vissza a térképhez' : reviewing ? 'Vissza a gyakorlóműhelybe' : 'Vissza a főmenübe'}</button><span class="stars">${bossMode?'⚔️ Főellenfél harc':reviewing?'🧠 Ismétlő kör':`⭐ ${state.stars} csillag`}</span>${soundButton()}</div>
     ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🎲 Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>${renderBoardMini()}` : bossMode?renderBossArena():''}
-    <div class="game-meta"><span>${(MODES.find(m => m.id === state.mode)||DIGIT_CARD_MODE).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. ${bossMode?'főellenfél-feladat':'feladat'}</span></div>
+    <div class="game-meta"><span>${(MODES.find(m=>m.id===state.mode)||CARD_DECKS.find(m=>m.id===state.mode)||DIGIT_CARD_MODE).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. ${bossMode?'főellenfél-feladat':'feladat'}</span></div>
     <div class="progress-track" role="progressbar" aria-valuenow="${state.index}" aria-valuemin="0" aria-valuemax="${state.questions.length}" aria-label="A játék előrehaladása"><div class="progress-fill" style="width: ${progress}%"></div></div>
     <section class="question-box" aria-label="Aktuális feladat">
       <span class="question-tag">${q.label}</span>
@@ -1114,7 +1269,7 @@ function renderResult() {
   let title = 'Szép munka!';
   let message = 'Minden feladatot megoldottál. A gyakorlással egyre ügyesebb leszel!';
   const total=state.questions.length;
-  if (state.playKind==='cards') { title='🎴 Pakli teljesítve!'; message='Mind a négy kérdéstípust gyakoroltad. A hibás kártyák visszakerülhetnek a Gyakorlóműhelybe.'; }
+  if (state.playKind==='cards') { title='🎴 Pakli teljesítve!'; message='A kártyapakli mind a 12 feladatát teljesítetted! A nehezebb kártyákat később a Hibáimból tanulok műhelyben újra gyakorolhatod.'; }
   else if (state.stars === total) { title = 'Tökéletes küldetés!'; message = 'Minden kérdést elsőre jól oldottál meg. Ez igazán remek teljesítmény!'; }
   else if (state.stars >= 7) { title = 'Nagyon ügyes voltál!'; message = 'Sok feladat sikerült elsőre. A többit is kitartóan megoldottad!'; }
   app.innerHTML = `<section class="result-screen">
@@ -1192,6 +1347,7 @@ app.addEventListener('click', event => {
   const action = button.dataset.action;
   if (action === 'map') { openAdventureMap(); return; }
   if (action === 'cards') { state.mode='digitcards'; beginGame(); return; }
+  if (action === 'card-deck') { const mode=button.dataset.mode;if(CARD_DECKS.some(d=>d.id===mode)){state.mode=mode;beginGame();}return; }
   if (action==='review-home') { state.view='smart';state.reviewTopic='all';render();return; }
   if (action==='review-level') { const level=Number(button.dataset.level);if(level>=0 && level<LEVELS.length) {state.level=level;render();} return; }
   if (action==='review-topic') { const topic=button.dataset.topic;if(topic==='all'||SMART_TOPICS.some(m=>m.id===topic)){state.reviewTopic=topic;render();}return; }
@@ -1236,7 +1392,7 @@ app.addEventListener('click', event => {
   if (action === 'set-mode') { state.mode = button.dataset.mode; render(); return; }
   if (action === 'set-level') { state.level = Number(button.dataset.level); render(); return; }
   if (action === 'start' || action === 'restart') { beginGame(); return; }
-  if (action === 'home') { if (state.mode==='digitcards') state.mode='mixed'; state.view = 'home'; render(); return; }
+  if (action === 'home') { if (CARD_DECKS.some(d=>d.id===state.mode)) state.mode='mixed'; state.view = 'home'; render(); return; }
   if (action === 'next') {
     if (!state.locked) return;
     const rewardTile=pendingRewardTile();
@@ -1286,5 +1442,5 @@ try {
 try { state.soundEnabled=window.localStorage.getItem(SOUND_SAVE_KEY)==='on'; }
 catch(error) { state.soundEnabled=false; }
 const brandLink = document.getElementById('brandLink');
-brandLink.addEventListener('click', event => { event.preventDefault(); if(state.mode==='digitcards') state.mode='mixed'; state.view = 'home'; render(); });
+brandLink.addEventListener('click', event => { event.preventDefault(); if(CARD_DECKS.some(d=>d.id===state.mode)) state.mode='mixed'; state.view = 'home'; render(); });
 render();

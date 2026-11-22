@@ -525,3 +525,39 @@ body { background:radial-gradient(circle at 4% 10%,#365ba3 0,transparent 30%),ra
 @media(max-width:920px){.digitcard-feature {grid-template-columns:110px minmax(0,1fr);padding:22px 28px;gap:15px;}.digitcard-feature-art span{width:47px;height:69px;font-size:29px}.digitcard-enter{grid-column:2;justify-self:start}}
 @media(max-width:600px){.digitcard-feature {grid-template-columns:1fr;padding:22px;gap:13px;}.digitcard-feature-art{min-height:85px;justify-content:start;padding-left:12px}.digitcard-feature-art span{height:66px;width:45px}.digitcard-enter{grid-column:1;justify-self:stretch;}.digitcard-paper{margin:16px auto 17px;padding:17px 11px 22px}.digitcard-paper-number{gap:7px}.digitcard-paper-number span{width:28%;height:78px;font-size:50px}.digitcard-paper-top{font-size:9px}.digitcard-choice{min-height:70px;font-size:35px}.digitcard-choices{gap:9px}}
 @media(prefers-reduced-motion:reduce){.digitcard-paper{animation:none!important}}
+
+/* V8 – helyiérték, beváltás és számszomszéd paklik. */
+.v8-pack-zone {padding:29px 36px 31px;background:linear-gradient(140deg,#fbfbff,#edf5ff 70%,#fcfaff);border-bottom:1px solid #dce6f5;color:#263658;}
+.v8-pack-head {display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:20px;}
+.v8-kicker {font-size:11px;letter-spacing:1.4px;color:#5555b3;font-weight:950;}
+.v8-pack-head h2 {font-size:clamp(22px,3vw,30px);font-weight:950;margin:5px 0 6px;}
+.v8-pack-head p{font-size:13px;line-height:1.5;color:#62718f;max-width:690px;margin:0;}
+.v8-count {font-size:11px;font-weight:950;letter-spacing:1px;white-space:nowrap;border-radius:999px;background:#e2e8ff;color:#51589f;padding:10px 12px;}
+.v8-pack-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}
+.v8-pack {border:2px solid #ffffff;border-radius:20px;padding:22px 20px 19px;box-shadow:0 7px 0 #24416c16,0 13px 23px #1e2e4720;display:flex;flex-direction:column;gap:8px;min-width:0;}
+.v8-pack-sky {background:linear-gradient(150deg,#d5f0ff,#b3dffc);}
+.v8-pack-sun {background:linear-gradient(150deg,#fff5d7,#fce0b2);}
+.v8-pack-mint {background:linear-gradient(150deg,#dffbef,#b5edd4);}
+.v8-pack-icon {font-size:36px;}
+.v8-pack h3 {font-size:21px;color:#21355b;margin:0;}
+.v8-pack p {font-size:13px;line-height:1.45;min-height:56px;margin:0;color:#47607b;}
+.v8-pack-example {border-radius:10px;background:#ffffffaa;color:#324a72;padding:9px;font-size:12px;line-height:1.4;min-height:49px;}
+.v8-pack button {border:0;border-radius:11px;background:#273d75;color:#fff;font-size:13px;font-weight:900;padding:14px 12px;margin-top:auto;box-shadow:0 4px 0 #12234b;cursor:pointer;}
+.v8-pack button:hover {background:#425aa2;transform:translateY(-2px);}
+.v8-pack-level {display:flex;align-items:center;gap:9px;flex-wrap:wrap;border-top:1px solid #d7e5ef;margin-top:23px;padding-top:17px;}
+.v8-pack-level strong {font-size:13px;margin-right:8px;}
+.v8-question-card {position:relative;max-width:680px;margin:22px auto;padding:22px 22px 25px;border-radius:23px;border:4px solid #fff;box-shadow:0 9px 0 #798faa40,0 20px 35px #23386020;text-align:center;animation:card-arrive .3s ease both;}
+.v8-question-sky {background:linear-gradient(135deg,#dcf3ff,#b6ddff);}
+.v8-question-sun {background:linear-gradient(135deg,#fff5d8,#ffd68e);}
+.v8-question-mint {background:linear-gradient(135deg,#e5fff5,#a8ecd0);}
+.v8-question-overline {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;text-align:left;font-weight:950;font-size:10px;letter-spacing:.7px;color:#3e5b75;}
+.v8-question-value {display:flex;justify-content:center;align-items:center;min-height:130px;margin:15px auto 8px;padding:13px;}
+.v8-big-number {font-size:clamp(70px,13vw,100px);font-weight:1000;line-height:1;color:#263b73;letter-spacing:2px;text-shadow:0 6px #ffffffaa;}
+.v8-expression {font-size:clamp(24px,4.4vw,48px);font-weight:1000;line-height:1.35;color:#263b73;overflow-wrap:anywhere;}
+.v8-question-bottom {font-size:12px;font-weight:950;color:#48607b;letter-spacing:.6px;}
+.v8-answer-cards {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:620px;margin:0 auto;}
+.v8-answer-cards.v8-four {grid-template-columns:repeat(4,minmax(0,1fr));}
+.v8-answer-cards .digitcard-choice {min-width:0;font-size:clamp(24px,4vw,37px);}
+@media(max-width:920px) {.v8-pack-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.v8-pack {padding:18px;}.v8-pack p{min-height:0;}}
+@media(max-width:620px) {.v8-pack-zone{padding:22px 16px;}.v8-pack-head{flex-direction:column;align-items:flex-start;}.v8-pack-grid{grid-template-columns:1fr;gap:12px;}.v8-pack{padding:16px 18px;}.v8-pack-icon{font-size:27px;}.v8-pack h3{font-size:20px;}.v8-pack-level{gap:7px;}.v8-question-card{padding:17px 10px 19px;margin:15px auto 19px;}.v8-question-overline{font-size:9px;}.v8-question-value{min-height:105px;}.v8-big-number{font-size:73px;}.v8-expression{font-size:clamp(22px,6vw,35px);}.v8-answer-cards{gap:7px;}.v8-answer-cards .digitcard-choice{font-size:26px;min-height:70px;padding:4px 0;}}
+@media(prefers-reduced-motion:reduce){.v8-question-card{animation:none!important}}
