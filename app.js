@@ -1,6 +1,7 @@
 'use strict';
 
-// Számmester 1000 V3 – társasjáték-stílusú kalandtábla, szerver nélkül.
+// Számmester 1000 V4 – saját, Roblox-hangulatú blokkos társasjátékvilág.
+// Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
 // 3. A gombokra kattintást az eseménykezelők dolgozzák fel.
@@ -24,18 +25,18 @@ const QUESTIONS_PER_GAME = 10;
 const ADVENTURE_QUESTIONS = 5;
 const ADVENTURE_STAGES = MODES.filter(mode => mode.id !== 'mixed');
 const HEROES = [
-  { id: 'fox', emoji: '🦊', name: 'Róka' },
-  { id: 'cat', emoji: '🐱', name: 'Cica' },
-  { id: 'dragon', emoji: '🐲', name: 'Sárkány' }
+  { id: 'fox', emoji: '🦊', name: 'Róka kalandor' },
+  { id: 'cat', emoji: '🐱', name: 'Cica felfedező' },
+  { id: 'dragon', emoji: '🐲', name: 'Sárkány őr' }
 ];
 const BOARD_REGIONS = [
-  { name:'Számok rétje', color:'mint' },
-  { name:'A helyi értékek falva', color:'sky' },
-  { name:'Számjegyek ligete', color:'lilac' },
-  { name:'Értékek hegye', color:'gold' },
-  { name:'Szomszédok tava', color:'blue' },
-  { name:'Beváltás-barlang', color:'peach' },
-  { name:'A számegyenes csúcsa', color:'rose' }
+  { name:'Számmező', color:'mint', badge:'🌿' },
+  { name:'Helyiérték-város', color:'sky', badge:'🏘️' },
+  { name:'Számjegyerdő', color:'lilac', badge:'🌳' },
+  { name:'Kristályhegy', color:'gold', badge:'💎' },
+  { name:'Szomszéd-sziget', color:'blue', badge:'🌊' },
+  { name:'Cserebarlang', color:'peach', badge:'🪙' },
+  { name:'Számegyenes-vár', color:'rose', badge:'🏰' }
 ];
 // A V2-es mentési kulcsot változatlanul hagyjuk, így a korábbi eredmények megmaradnak.
 const HERO_SAVE_KEY = 'szammester1000_board_hero_v3';
@@ -50,7 +51,7 @@ const state = {
   questions: [], index: 0, stars: 0,
   mistakes: false, locked: false, selected: [], inputs: {},
   feedback: null, lastChoice: null, chosenTick: null, best: 0,
-  playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox'
+  playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox', boardAnimationFrom: null
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -216,6 +217,16 @@ function makeQuestion(type, level) {
     default: throw new Error('Ismeretlen feladattípus: ' + type);
   }
 }
+// CSS-sel rajzolt, animált blokkfigurák: nincs szükség képfájlra.
+function blockAvatar(heroId, size = 'default', celebration = false) {
+  const id = HEROES.some(hero => hero.id === heroId) ? heroId : 'fox';
+  return `<span class="block-avatar block-avatar--${id} block-avatar--${size} ${celebration ? 'is-celebrating' : ''}" aria-hidden="true">
+    <span class="avatar-tail"></span><span class="avatar-leg avatar-leg-left"></span><span class="avatar-leg avatar-leg-right"></span>
+    <span class="avatar-arm avatar-arm-left"></span><span class="avatar-arm avatar-arm-right"></span>
+    <span class="avatar-torso"><span class="avatar-mark">★</span></span>
+    <span class="avatar-head"><span class="avatar-ears"></span><span class="avatar-eye avatar-eye-left"></span><span class="avatar-eye avatar-eye-right"></span><span class="avatar-smile"></span></span>
+  </span>`;
+}
 function renderHome() {
   app.innerHTML = `
     <section class="home-hero">
@@ -227,11 +238,11 @@ function renderHome() {
       <div class="number-visual" aria-hidden="true"><span class="visual-chip">7</span><span class="visual-chip">100</span><span class="visual-chip">42</span><span class="visual-chip">✦</span></div>
     </section>
     <section class="adventure-feature" aria-label="Új kalandmód">
-      <div class="adventure-feature-icon" aria-hidden="true">🗺️</div>
+      <div class="adventure-feature-icon block-feature-icon" aria-hidden="true">${blockAvatar(state.hero, 'feature')}</div>
       <div class="adventure-feature-text">
-        <span class="adventure-kicker">ÚJ • JÁTSZHATÓ TÁRSASJÁTÉKTÁBLA</span>
-        <h2>Számország varázsösvénye</h2>
-        <p>35 mező, 7 állomás, választott bábu és csillagok! Minden jó megoldás egy lépés a cél felé. A korábbi eredményeidet is megtartjuk.</p>
+        <span class="adventure-kicker">V4 • BLOKKVILÁG KALAND</span>
+        <h2>Számország: Blokk-kaland</h2>
+        <p>Ugorj be egy Roblox-hangulatú, színes blokkvilágba! 35 mező, 7 birodalom, animált hősök – és minden helyes válasszal közelebb kerülsz a kincses várhoz.</p>
       </div>
       <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
     </section>
@@ -322,6 +333,10 @@ function saveAdventureDraft() {
 }
 function openAdventureMap() {
   state.adventureData = readAdventureData();
+  // A térképre visszatérve a bábu a legutóbbi jó válasz helyéről ugrik előre.
+  if (state.view === 'game' && state.playKind === 'adventure' && state.lastStepFrom !== undefined) {
+    state.boardAnimationFrom = state.lastStepFrom;
+  } else { state.boardAnimationFrom = null; }
   state.view = 'map';
   render();
 }
@@ -329,6 +344,8 @@ function isAdventureUnlocked(stage) {
   return stage === 0 || state.adventureData.completed[stage - 1];
 }
 function startAdventureStage(stage) {
+  state.boardAnimationFrom = null;
+  state.lastStepFrom = undefined;
   if (!Number.isInteger(stage) || stage < 0 || stage >= ADVENTURE_STAGES.length) return;
   state.adventureData = state.adventureData || readAdventureData();
   if (!isAdventureUnlocked(stage)) return;
@@ -395,12 +412,60 @@ function boardPosition(progress) {
   while (count<7 && progress.completed[count]) count++;
   return count*5;
 }
+function voxelWorld() {
+  // Eredeti, képmentes SVG: blokkok, kockafák, tornyok és kristályok.
+  // Minden animáció a böngészőben fut, így GitHub Pages-en is működik.
+  const bandColors = ['#85e9a7','#6ccbf5','#82e0c5','#b899fa','#71d1ef','#ffc47c','#ef98d5'];
+  const scene = [
+    ['tree',36,240,1], ['tree',1045,245,.85], ['coin',1052,118,1], ['cube',875,69,1.1],
+    ['house',45,347,.95], ['house',976,335,1], ['cube',1053,390,.75],
+    ['tree',41,535,1], ['tree',1011,527,.9], ['tree',967,587,.78],
+    ['crystal',42,667,1.15], ['crystal',988,672,.95], ['cube',1034,731,.7],
+    ['island',47,854,1], ['island',969,828,.95], ['cube',1040,884,1],
+    ['crystal',45,1018,.82], ['coin',998,1007,1], ['cube',1024,1072,.7],
+    ['castle',35,1114,1], ['castle',980,1136,.88], ['coin',936,1164,.65]
+  ].map(([type,x,y,scale]) => {
+    const dims={tree:[110,130],house:[130,140],crystal:[95,130],cube:[85,85],island:[140,120],coin:[90,95],castle:[150,145]};
+    const [width,height]=dims[type];
+    return `<use href="#voxel-${type}" width="${width}" height="${height}" transform="translate(${x} ${y}) scale(${scale})"/>`;
+  }).join('');
+  const blockDecor=Array.from({length:7},(_,i)=>{
+    const top=i*175;
+    return `<g opacity=".23" fill="none" stroke="#ffffff" stroke-width="3"><path d="M0 ${top+32} H1100" stroke-dasharray="20 24"/><path d="M0 ${top+150} H1100" stroke-dasharray="20 26"/></g>`;
+  }).join('');
+  const road = boardRoadPath();
+  return `<svg class="board-landscape voxel-landscape" viewBox="0 0 1100 1225" preserveAspectRatio="none" aria-hidden="true">
+   <defs>
+    <pattern id="voxelGrid" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M44 0H0V44" fill="none" stroke="#0f2d58" stroke-opacity=".11" stroke-width="2"/></pattern>
+    <linearGradient id="voxelRoad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffcd8"/><stop offset="1" stop-color="#f5ddba"/></linearGradient>
+    <symbol id="voxel-tree" viewBox="0 0 110 130"><rect x="45" y="60" width="18" height="55" rx="2" fill="#90653b"/><path d="M45 60l11-6 18 8-11 6Z" fill="#c69a62"/><path d="M10 52L47 28 95 49 59 76Z" fill="#b4f86d"/><path d="M10 52L59 76V103L10 79Z" fill="#36a96c"/><path d="M59 76L95 49V77L59 103Z" fill="#197e63"/><path d="M33 15L60 0 93 18 65 36Z" fill="#cffd88"/><path d="M33 15L65 36V58L33 37Z" fill="#65cf67"/><path d="M65 36L93 18V42L65 58Z" fill="#26a867"/></symbol>
+    <symbol id="voxel-house" viewBox="0 0 130 140"><path d="M12 50L72 21 120 46 59 79Z" fill="#ffe39c" stroke="#304d8a" stroke-width="4"/><path d="M12 50L59 79V129L12 103Z" fill="#e47e73" stroke="#304d8a" stroke-width="4"/><path d="M59 79L120 46V99L59 129Z" fill="#fcb4a0" stroke="#304d8a" stroke-width="4"/><path d="M23 43L72 9 124 37 73 70Z" fill="#ae70f9" stroke="#304d8a" stroke-width="4"/><rect x="74" y="88" width="26" height="27" fill="#4cb5fb" stroke="#304d8a" stroke-width="3"/></symbol>
+    <symbol id="voxel-crystal" viewBox="0 0 95 130"><path d="M15 43L48 2 85 43 72 115 31 115Z" fill="#bfc0ff" stroke="#514eac" stroke-width="5"/><path d="M48 2L48 115 15 43Z" fill="#f2ddff"/><path d="M48 2L85 43 48 115Z" fill="#7d64db"/><path d="M15 43L48 115 31 115Z" fill="#6854be"/></symbol>
+    <symbol id="voxel-cube" viewBox="0 0 85 85"><path d="M6 25L42 4 79 25 43 46Z" fill="#ffe58a" stroke="#4b4783" stroke-width="4"/><path d="M6 25L43 46V80L6 58Z" fill="#e99253" stroke="#4b4783" stroke-width="4"/><path d="M43 46L79 25V58L43 80Z" fill="#c46cb5" stroke="#4b4783" stroke-width="4"/></symbol>
+    <symbol id="voxel-island" viewBox="0 0 140 120"><path d="M14 59L67 35 124 60 72 85Z" fill="#a1f7f0" stroke="#287f9b" stroke-width="4"/><path d="M14 59L72 85 71 112 14 88Z" fill="#42a7dd"/><path d="M72 85L124 60V90L71 112Z" fill="#146bb9"/><path d="M36 47L66 31 98 46 68 62Z" fill="#d7fba5"/><path d="M36 47L68 62V70L36 55Z" fill="#5dcb96"/></symbol>
+    <symbol id="voxel-coin" viewBox="0 0 90 95"><path d="M22 15L60 4 76 19V72L34 88 18 74Z" fill="#af741c" stroke="#6a427c" stroke-width="4"/><path d="M18 19L59 7 70 20V69L29 82 18 74Z" fill="#ffe47d" stroke="#6a427c" stroke-width="4"/><path d="M43 23L47 36 61 38 50 47 53 62 39 54 26 64 31 47 24 38 37 36Z" fill="#f8a340"/></symbol>
+    <symbol id="voxel-castle" viewBox="0 0 150 145"><path d="M25 70L55 55 128 81 96 99Z" fill="#f4cefd"/><path d="M25 70L96 99V140L25 111Z" fill="#8b75e7"/><path d="M96 99L128 81V122L96 140Z" fill="#5548ae"/><path d="M10 45L39 26 62 39 32 58Z" fill="#f6cfff"/><path d="M10 45L32 58V112L10 96Z" fill="#b29cfa"/><path d="M32 58L62 39V96L32 112Z" fill="#745cd4"/><path d="M98 38L122 23 144 37 120 52Z" fill="#f6cfff"/><path d="M98 38L120 52V110L98 99Z" fill="#b29cfa"/><path d="M120 52L144 37V99L120 110Z" fill="#745cd4"/><path d="M20 13L48 0 65 13 37 27Z" fill="#ffe07b"/><path d="M105 12L130 0 149 15 123 27Z" fill="#ffe07b"/><path d="M68 103L86 94 96 99V139L68 126Z" fill="#4a427e"/></symbol>
+   </defs>
+   ${bandColors.map((color,i)=>`<rect x="0" y="${i*175}" width="1100" height="175" fill="${color}"/>`).join('')}
+   <rect width="1100" height="1225" fill="url(#voxelGrid)"/>
+   ${blockDecor}
+   <path d="M0 780L80 752 160 780 240 751 320 781 400 753 480 784 560 752 640 779 720 756 800 782 880 748 960 773 1100 746" stroke="#fef4b0" stroke-width="13" fill="none" opacity=".28"/>
+   ${scene}
+   <path d="${road}" fill="none" stroke="#26345e" stroke-width="100" stroke-linecap="round" stroke-linejoin="round" opacity=".25" transform="translate(0 12)"/>
+   <path d="${road}" fill="none" stroke="#38456d" stroke-width="90" stroke-linecap="round" stroke-linejoin="round"/>
+   <path d="${road}" fill="none" stroke="url(#voxelRoad)" stroke-width="79" stroke-linecap="round" stroke-linejoin="round"/>
+   <path d="${road}" fill="none" stroke="#f0bf7a" stroke-width="4" stroke-dasharray="10 18" stroke-linecap="round"/>
+  </svg>`;
+}
 function renderBoard(progress) {
   const position=boardPosition(progress);
   const pawn = position === 0 ? { x: 84, y: 178 } : boardCoord(position-1);
+  const oldPosition = Number.isInteger(state.boardAnimationFrom) ? state.boardAnimationFrom : null;
+  const origin=oldPosition === null || oldPosition === position ? pawn : oldPosition === 0 ? {x:84,y:178} : boardCoord(Math.min(34,oldPosition-1));
+  const moving=oldPosition !== null && oldPosition !== position;
   const regionLabels = BOARD_REGIONS.map((r,i) => {
     const isRight=i%2===1;
-    return `<div class="board-region region-${r.color} ${isRight?'region-right':''}" style="left:${isRight?74:26}%;top:${(105+i*147)/1225*100}%"><span>${ADVENTURE_STAGES[i].emoji} ${r.name}</span></div>`;
+    return `<div class="board-region region-${r.color} ${isRight?'region-right':''}" style="left:${isRight?73:27}%;top:${(100+i*147)/1225*100}%"><span>${r.badge} ${r.name}</span></div>`;
   }).join('');
   const tiles = Array.from({length:35},(_,tileIndex)=>{
     const stage=Math.floor(tileIndex/5);
@@ -409,32 +474,16 @@ function renderBoard(progress) {
     const completed=stageProgress>=tileIndex%5+1;
     const unlocked=stage===0 || progress.completed[stage-1];
     const gate=tileIndex%5===4;
-    return `<button type="button" class="board-tile ${completed?'tile-done':''} ${unlocked?'tile-unlocked':'tile-locked'} ${gate?'tile-gate':''} ${position===tileIndex+1?'tile-current':''}" style="left:${loc.x/1100*100}%;top:${loc.y/1225*100}%" data-action="stage" data-stage="${stage}" ${unlocked?'':'disabled'} aria-label="${tileIndex+1}. mező, ${ADVENTURE_STAGES[stage].name}${unlocked?', megnyitható':', lezárva'}" title="${ADVENTURE_STAGES[stage].name}"><span class="board-tile-number">${gate?'✦':tileIndex+1}</span></button>`;
+    return `<button type="button" class="board-tile voxel-tile ${completed?'tile-done':''} ${unlocked?'tile-unlocked':'tile-locked'} ${gate?'tile-gate':''} ${position===tileIndex+1?'tile-current':''}" style="left:${loc.x/1100*100}%;top:${loc.y/1225*100}%" data-action="stage" data-stage="${stage}" ${unlocked?'':'disabled'} aria-label="${tileIndex+1}. mező, ${ADVENTURE_STAGES[stage].name}${unlocked?', megnyitható':', lezárva'}" title="${ADVENTURE_STAGES[stage].name}"><span class="board-tile-number">${gate?'★':tileIndex+1}</span></button>`;
   }).join('');
-  const road=boardRoadPath();
   const hero=HEROES.find(h=>h.id===state.hero) || HEROES[0];
-  return `<div class="board-scroll" role="region" tabindex="0" aria-label="35 mezős matematikai társasjátéktábla; kisebb kijelzőn oldalra görgethető">
-  <div class="board-world">
-    <svg class="board-landscape" viewBox="0 0 1100 1225" preserveAspectRatio="none" aria-hidden="true">
-      <defs><linearGradient id="boardGreen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e1f6cf"/><stop offset=".53" stop-color="#fff3d5"/><stop offset="1" stop-color="#e1edf9"/></linearGradient><linearGradient id="boardRoad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffedbb"/><stop offset="1" stop-color="#fffaf0"/></linearGradient></defs>
-      <rect width="1100" height="1225" rx="32" fill="url(#boardGreen)"/>
-      <path d="M0 300 Q200 212 390 316 T790 283 T1100 300 V445 Q850 363 710 414 T280 400 T0 448Z" fill="#b9deba" opacity=".42"/>
-      <path d="M0 780 Q250 710 480 820 T1100 760 V1015 Q820 975 550 990 T0 990Z" fill="#c4d9e9" opacity=".48"/>
-      <path d="M0 1080 Q180 1005 385 1090 T790 1085 T1100 1060 V1225H0Z" fill="#f4d8b5" opacity=".55"/>
-      <path d="M-35 626 Q240 548 458 658 T1138 622" fill="none" stroke="#a9d8e1" stroke-width="44" opacity=".56"/>
-      <path d="M-35 626 Q240 548 458 658 T1138 622" fill="none" stroke="#d5f6f9" stroke-width="26" opacity=".73"/>
-      <g opacity=".55" fill="#f5fcf9"><ellipse cx="240" cy="86" rx="65" ry="21"/><ellipse cx="278" cy="75" rx="47" ry="27"/><ellipse cx="768" cy="438" rx="57" ry="17"/><ellipse cx="791" cy="422" rx="35" ry="25"/><ellipse cx="320" cy="861" rx="65" ry="19"/></g>
-      <g fill="#91c5a9" opacity=".58"><path d="M56 440l25-52 25 52H93l21 39H47l21-39Z"/><path d="M1045 765l28-53 28 53h-17l23 45h-70l20-45Z"/><path d="M64 905l22-44 22 44H96l14 30H63l16-30Z"/><path d="M1021 280l20-44 20 44h-12l16 31h-48l13-31Z"/></g>
-      <path d="${road}" fill="none" stroke="#c5a777" stroke-width="90" stroke-linecap="round" stroke-linejoin="round" opacity=".28"/>
-      <path d="${road}" fill="none" stroke="url(#boardRoad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="${road}" fill="none" stroke="#e3c98f" stroke-width="4" stroke-dasharray="5 18" stroke-linecap="round"/>
-    </svg>
-    <div class="board-deco deco-castle" aria-hidden="true">🏰</div><div class="board-deco deco-forest" aria-hidden="true">🌲🌳</div><div class="board-deco deco-lake" aria-hidden="true">🪷</div><div class="board-deco deco-star" aria-hidden="true">✨</div>
-    ${regionLabels}
-    <div class="board-start-flag">START</div><div class="board-finish-flag">CÉL 🏆</div>
-    ${tiles}
-    <div class="board-pawn" style="left:${pawn.x/1100*100}%;top:${pawn.y/1225*100}%" role="img" aria-label="A bábu a ${position}. mezőnél jár"><span>${hero.emoji}</span></div>
-  </div></div>`;
+  return `<div class="board-scroll" role="region" tabindex="0" aria-label="35 mezős blokkvilág társasjátéktábla; kisebb kijelzőn oldalra görgethető">
+   <div class="board-world voxel-world">${voxelWorld()}
+     ${regionLabels}
+     <div class="board-start-flag">START</div><div class="board-finish-flag">CÉL 🏆</div>
+     ${tiles}
+     <div class="board-pawn voxel-pawn ${moving?'pawn-advancing':''}" style="left:${pawn.x/1100*100}%;top:${pawn.y/1225*100}%;--pawn-x:${(origin.x-pawn.x)/1100*100}%;--pawn-y:${(origin.y-pawn.y)/1225*100}%" role="img" aria-label="${hero.name} bábu, ${position}. mező">${blockAvatar(state.hero,'board')}</div>
+   </div></div>`;
 }
 function renderAdventureMap() {
   state.adventureData = readAdventureData();
@@ -445,9 +494,9 @@ function renderAdventureMap() {
   const position=boardPosition(progress);
   app.innerHTML = `<section class="adventure-hero board-hero">
     <button class="text-button adventure-back" type="button" data-action="home">← Vissza a főmenübe</button>
-    <p class="eyebrow">🎲 MATEMATIKAI TÁRSASJÁTÉK • 3. VERZIÓ</p>
-    <h1>Számország <span>varázsösvénye</span></h1>
-    <p>Válassz bábut, majd haladj végig a 35 mezős kalandpályán! <strong>Minden megoldott feladat egy mezővel visz előrébb.</strong> Itt a tudás számít, nem a szerencse.</p>
+    <p class="eyebrow">🧱 BLOKK-KALAND • 4. VERZIÓ</p>
+    <h1>Számország <span>blokkvilága</span></h1>
+    <p>Válassz egy mozgó, kockafejű hőst, fedezd fel a hét színes blokk-birodalmat, és juss el a kincses várba! <strong>Minden helyes megoldás egy mezővel visz előrébb.</strong></p>
     <div class="adventure-hero-stats"><span>🎲 ${position} / 35 mező</span><span>🔓 ${done} / 7 kapu</span><span>⭐ ${totalStars} / 35 csillag</span></div>
   </section>
   <section class="adventure-map-body board-body">
@@ -455,10 +504,10 @@ function renderAdventureMap() {
       <div><h2>Válassz nehézséget!</h2><p>Mindegyik szintnek saját mentése van.</p></div>
       <div class="level-buttons adventure-level-buttons" role="group" aria-label="Kaland nehézsége">${LEVELS.map((lev,i)=>`<button type="button" class="level-button ${state.level===i?'selected':''}" data-action="map-level" data-level="${i}" aria-pressed="${i===state.level}">${lev.emoji} ${lev.name}</button>`).join('')}</div>
     </div>
-    <div class="hero-picker"><strong>🧍 Válaszd ki a bábudat!</strong><div class="hero-options" role="group" aria-label="Játékbábu kiválasztása">${HEROES.map(hero=>`<button type="button" class="hero-option ${state.hero===hero.id?'active':''}" data-action="hero" data-hero="${hero.id}" aria-pressed="${state.hero===hero.id}"><span aria-hidden="true">${hero.emoji}</span>${hero.name}</button>`).join('')}</div></div>
+    <div class="hero-picker voxel-hero-picker"><strong>🧍 Válassz egy blokk-hőst!</strong><div class="hero-options" role="group" aria-label="Játékbábu kiválasztása">${HEROES.map(hero=>`<button type="button" class="hero-option ${state.hero===hero.id?'active':''}" data-action="hero" data-hero="${hero.id}" aria-pressed="${state.hero===hero.id}">${blockAvatar(hero.id,'picker')}<span class="hero-name">${hero.name}</span></button>`).join('')}</div></div>
     ${draft ? `<div class="adventure-resume"><div><strong>📌 Félbehagyott küldetésed van</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index+1}. feladat az 5-ből</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatom →</button></div>` : ''}
-    <div class="board-frame"><div class="board-heading"><span>🗺️ KALANDTÁBLA</span><span>START → 35 MEZŐ → CÉL</span></div>${renderBoard(progress)}<p class="board-scroll-tip">📱 Telefonon a pályát oldalirányban is görgetheted.</p></div>
-    <div class="board-legend"><span>${(HEROES.find(h=>h.id===state.hero)||HEROES[0]).emoji} Bábu: itt tartasz</span><span>✅ Zöld mező: teljesítve</span><span>🔒 Szürke mező: még zárva</span></div>
+    <div class="board-frame"><div class="board-heading"><span>🧱 BLOKKVILÁG TÁRSASTÁBLA</span><span>7 BIRODALOM · 35 MEZŐ</span></div>${renderBoard(progress)}<p class="board-scroll-tip">📱 Telefonon a pályát oldalirányban is görgetheted.</p></div>
+    <div class="board-legend"><span>🧍 A blokk-hősöd jelzi, hol tartasz</span><span>✅ Zöld mező: teljesítve</span><span>🔒 Szürke mező: még zárva</span></div>
     <div class="board-missions"><h2>🚩 Válassz megnyitott állomást!</h2><p>A következő kapu öt megoldott feladat után nyílik ki. A már teljesített pályákat bármikor újrajátszhatod.</p>
       <div class="board-mission-grid">${ADVENTURE_STAGES.map((mode,i)=>{
         const unlocked=isAdventureUnlocked(i), completed=progress.completed[i];
@@ -473,7 +522,7 @@ function renderAdventureResult() {
   const mode = ADVENTURE_STAGES[stage];
   const last = stage === ADVENTURE_STAGES.length - 1;
   app.innerHTML = `<section class="result-screen adventure-result">
-    <div class="result-emoji board-victory" aria-hidden="true">${last ? '🏆' : '🔑'}</div>
+    <div class="result-block-hero">${blockAvatar(state.hero,'victory',true)}</div><div class="result-emoji board-victory" aria-hidden="true">${last ? '🏆' : '🔑'}</div>
     <p class="eyebrow">🎉 ${stage + 1}. KAPU KINYITVA!</p>
     <h1>${last ? 'Megmentetted Számországot!' : 'Kinyitottad a következő kaput!'}</h1>
     <p>${mode.name}: mind az 5 feladatot megoldottad. ${last ? 'Mind a hét állomáson végigértél!' : 'Most már egy újabb állomás is elérhető a térképen.'}</p>
@@ -542,7 +591,7 @@ function renderQuestionContents(q) {
 function renderBoardMini() {
   const step=state.index+(state.locked?1:0);
   const hero=HEROES.find(h=>h.id===state.hero) || HEROES[0];
-  return `<div class="mini-board" aria-label="Társasjáték-állás: ${step} az 5 mezőből"><span class="mini-board-label">🎲 Lépj előre a helyes megoldással!</span><div class="mini-track"><span class="mini-start">START</span>${Array.from({length:5},(_,i)=>`<span class="mini-tile ${i<step?'mini-done':''} ${i===step-1?'mini-current':''}">${i===step-1?`<span class="mini-pawn">${hero.emoji}</span>`:i+1}</span>`).join('')}<span class="mini-gate">🔑</span></div></div>`;
+  return `<div class="mini-board" aria-label="Társasjáték-állás: ${step} az 5 mezőből"><span class="mini-board-label">🧱 A blokk-hősöd minden jó megoldás után ugrik egyet!</span><div class="mini-track"><span class="mini-start">START</span>${Array.from({length:5},(_,i)=>`<span class="mini-tile ${i<step?'mini-done':''} ${i===step-1?'mini-current':''}">${i===step-1?`<span class="mini-pawn">${blockAvatar(state.hero,'mini')}</span>`:i+1}</span>`).join('')}<span class="mini-gate">🔑</span></div></div>`;
 }
 function renderGame() {
   const q = state.questions[state.index];
@@ -559,7 +608,7 @@ function renderGame() {
       ${renderQuestionContents(q)}
     </section>
     <div id="answer-feedback" aria-live="polite" aria-atomic="true">
-      ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? '🌟 Ügyes vagy, jó megoldás!' : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}</div>` : ''}
+      ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? '🌟 Ügyes vagy, jó megoldás!' : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}${state.feedback.type === 'success' && state.playKind === 'adventure' ? '<span class="answer-confetti" aria-hidden="true">✦ ✨ ✦</span>' : ''}</div>` : ''}
     </div>
     ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${state.index === state.questions.length - 1 ? (state.playKind === 'adventure' ? 'Kapu kinyitása 🔑' : 'Eredmény megtekintése 🏆') : 'Következő feladat →'}</button></div>` : ''}
   </div>`;
@@ -603,6 +652,7 @@ function tryAnswer(correct, userFriendlyError) {
   const q = state.questions[state.index];
   if (state.locked) return;
   if (correct) {
+    if (state.playKind === 'adventure') state.lastStepFrom = state.adventureStage * ADVENTURE_QUESTIONS + state.index;
     if (!state.mistakes) state.stars += 1;
     state.locked = true;
     state.feedback = { type: 'success', text: q.explain };
