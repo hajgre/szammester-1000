@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 V4 – saját, Roblox-hangulatú blokkos társasjátékvilág.
+// Számmester 1000 V5 – kincsvadászat, jutalommezők, hangok, főellenfelek.
 // Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
@@ -40,6 +40,19 @@ const BOARD_REGIONS = [
 ];
 // A V2-es mentési kulcsot változatlanul hagyjuk, így a korábbi eredmények megmaradnak.
 const HERO_SAVE_KEY = 'szammester1000_board_hero_v3';
+// ÚJ mentések külön kulcson. A régi V1–V4 haladást sosem írjuk felül.
+const REWARDS_SAVE_KEY = 'szammester1000_rewards_v5_';
+const SOUND_SAVE_KEY = 'szammester1000_sound_v5';
+const BOSS_QUESTIONS = 2;
+const BOSSES = [
+  {name:'Számzavaró Manó', icon:'👹', badge:'Számmező hőse', motto:'A sorrend titkát senki sem fejti meg!', type:'moss'},
+  {name:'A Tízes Torony Robotja', icon:'🤖', badge:'Helyiérték-védő', motto:'Találd meg a számjegyek helyét!', type:'steel'},
+  {name:'Az Álcaerdő Szelleme', icon:'👻', badge:'Számjegynyomozó', motto:'Tudod, mennyit ér a számjegy?', type:'violet'},
+  {name:'Kristálykolosszus', icon:'🪨', badge:'Kristálymester', motto:'A valódi érték a kulcs!', type:'crystal'},
+  {name:'Szigetóriás', icon:'🐙', badge:'Szomszédkapitány', motto:'Ismered a számok szomszédait?', type:'ocean'},
+  {name:'Beváltások Őrzője', icon:'🧌', badge:'Érmealkimista', motto:'Váltsd be, amit összegyűjtöttél!', type:'ember'},
+  {name:'A Számegyenes Sárkánya', icon:'🐉', badge:'Számország bajnoka', motto:'Megtalálod az utolsó titkos helyet?', type:'rose'}
+];
 
 // A 3 nehézségi szint kalandmentései egymástól függetlenek.
 const ADVENTURE_SAVE_KEY = 'szammester1000_adventure_v1_';
@@ -51,7 +64,9 @@ const state = {
   questions: [], index: 0, stars: 0,
   mistakes: false, locked: false, selected: [], inputs: {},
   feedback: null, lastChoice: null, chosenTick: null, best: 0,
-  playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox', boardAnimationFrom: null
+  playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox', boardAnimationFrom: null,
+  rewardData: null, rewardTile: -1, rewardReturn: 'map', rewardClaimed: false, rewardAmount: 0,
+  bossStageStars: 0, bossNewBadge: false, bossCoins: 0, soundEnabled: false
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -240,9 +255,9 @@ function renderHome() {
     <section class="adventure-feature" aria-label="Új kalandmód">
       <div class="adventure-feature-icon block-feature-icon" aria-hidden="true">${blockAvatar(state.hero, 'feature')}</div>
       <div class="adventure-feature-text">
-        <span class="adventure-kicker">V4 • BLOKKVILÁG KALAND</span>
-        <h2>Számország: Blokk-kaland</h2>
-        <p>Ugorj be egy Roblox-hangulatú, színes blokkvilágba! 35 mező, 7 birodalom, animált hősök – és minden helyes válasszal közelebb kerülsz a kincses várhoz.</p>
+        <span class="adventure-kicker">V5 • KINCSVADÁSZAT</span>
+        <h2>Számország: Kincsvadászat</h2>
+        <p>Fedezd fel a 35 mezős blokkvilágot! Nyiss 14 kincsesládát, találj 7 meglepetésmezőt, és győzd le a 7 birodalom főellenfelét!</p>
       </div>
       <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
     </section>
@@ -291,6 +306,211 @@ function resetQuestionState() {
   state.lastChoice = null;
   state.chosenTick = null;
 }
+
+// --- V5: külön mentett jutalmak, továbbra is csak ezen a böngészőn ---
+function newRewardData() {
+  return { coins:0, chests:Array(35).fill(false), surprises:Array(35).fill(false), tileCoins:Array(35).fill(false),
+    bosses:Array(7).fill(false), bossDraft:null };
+}
+function readRewardData() {
+  const fresh=newRewardData();
+  try {
+    const saved=JSON.parse(window.localStorage.getItem(REWARDS_SAVE_KEY+state.level)||'null');
+    if (!saved || typeof saved!=='object') return fresh;
+    fresh.coins=Number.isFinite(saved.coins)?Math.max(0,Math.min(999999,Math.floor(saved.coins))):0;
+    for (const key of ['chests','surprises','tileCoins','bosses']) {
+      if (Array.isArray(saved[key])) fresh[key]=fresh[key].map((_,i)=>saved[key][i]===true);
+    }
+    const d=saved.bossDraft;
+    if (d && Number.isInteger(d.stage) && d.stage>=0 && d.stage<7 &&
+        Array.isArray(d.questions) && d.questions.length===BOSS_QUESTIONS &&
+        d.questions.every(q=>q && q.type===ADVENTURE_STAGES[d.stage].id) &&
+        Number.isInteger(d.index) && d.index>=0 && d.index<BOSS_QUESTIONS) fresh.bossDraft=d;
+  } catch(error) { /* Rossz vagy tiltott helyi tárhely esetén kezdő jutalomállapot. */ }
+  return fresh;
+}
+function writeRewardData() {
+  if (!state.rewardData) return;
+  try { window.localStorage.setItem(REWARDS_SAVE_KEY+state.level, JSON.stringify(state.rewardData)); }
+  catch(error) { /* Tárhely nélkül is folytatható a játék. */ }
+}
+function rewardKind(tile) {
+  const local=tile%5;
+  return local===1||local===3?'chest':local===2?'surprise':null;
+}
+function rewardCollected(tile) {
+  const kind=rewardKind(tile);
+  if (!kind || !state.rewardData) return false;
+  return kind==='chest'?state.rewardData.chests[tile]:state.rewardData.surprises[tile];
+}
+function canCollectBoardReward(tile, progress) {
+  const stage=Math.floor(tile/5);
+  if (!rewardKind(tile) || !isAdventureUnlocked(stage)) return false;
+  const reached=progress.completed[stage] ||
+    (progress.draft?.stage===stage && progress.draft.index+(progress.draft.locked?1:0)>=tile%5+1);
+  return Boolean(reached && !rewardCollected(tile));
+}
+function pendingRewardTile() {
+  if (state.playKind!=='adventure' || !state.locked) return -1;
+  const tile=state.adventureStage*5+state.index;
+  return rewardKind(tile) && !rewardCollected(tile) ? tile : -1;
+}
+function startRewardEvent(tile, returnTo='map') {
+  if (!Number.isInteger(tile)||tile<0||tile>=35 || !rewardKind(tile) || rewardCollected(tile)) return;
+  state.rewardTile=tile;
+  state.rewardReturn=returnTo;
+  state.rewardClaimed=false;
+  state.rewardAmount=0;
+  state.view='reward';
+  render();
+  playSound('mystery');
+}
+function claimReward() {
+  const tile=state.rewardTile;
+  if (state.view!=='reward'||state.rewardClaimed||tile<0||tile>=35||rewardCollected(tile)) return;
+  const kind=rewardKind(tile);
+  const amount=kind==='chest' ? tile%5===1?12:18 : 7+((tile*5+state.level*3)%3)*5;
+  state.rewardData[kind==='chest'?'chests':'surprises'][tile]=true;
+  state.rewardData.coins+=amount;
+  state.rewardClaimed=true;
+  state.rewardAmount=amount;
+  writeRewardData();
+  playSound('treasure');
+  render();
+}
+function leaveRewardEvent() {
+  if (!state.rewardClaimed) return;
+  if (state.rewardReturn==='game' && state.playKind==='adventure') {
+    state.view='game'; state.index+=1;
+    if (state.index>=state.questions.length) { startBossFight(state.adventureStage, state.stars); return; }
+    resetQuestionState(); saveAdventureDraft(); render();
+  } else openAdventureMap();
+}
+function saveBossDraft() {
+  if (state.playKind!=='boss'||state.view!=='game'||!state.rewardData) return;
+  state.rewardData.bossDraft={stage:state.adventureStage,questions:state.questions,index:state.index,
+    stars:state.stars,stageStars:state.bossStageStars,mistakes:state.mistakes,locked:state.locked,
+    selected:state.selected,inputs:state.inputs,feedback:state.feedback,
+    lastChoice:state.lastChoice,chosenTick:state.chosenTick};
+  writeRewardData();
+}
+function saveCurrentGame() {
+  if (state.playKind==='boss') saveBossDraft();
+  else saveAdventureDraft();
+}
+function startBossFight(stage, stageStars=0) {
+  state.rewardData=state.rewardData||readRewardData();
+  state.adventureData=state.adventureData||readAdventureData();
+  if (!Number.isInteger(stage)||stage<0||stage>=7||!isAdventureUnlocked(stage)) return;
+  const draft=state.rewardData.bossDraft;
+  state.playKind='boss'; state.adventureStage=stage;
+  state.mode=ADVENTURE_STAGES[stage].id;
+  state.bossStageStars=Math.max(0,Math.min(5,Number(stageStars)||0));
+  if (draft && draft.stage===stage) {
+    state.questions=draft.questions;
+    state.index=draft.index;
+    state.stars=Math.max(0,Math.min(2,Number(draft.stars)||0));
+    state.bossStageStars=Math.max(0,Math.min(5,Number(draft.stageStars)||0));
+    state.mistakes=Boolean(draft.mistakes); state.locked=Boolean(draft.locked);
+    state.selected=Array.isArray(draft.selected)?draft.selected:[];
+    state.inputs=draft.inputs||{};
+    state.feedback=draft.feedback||null;
+    state.lastChoice=draft.lastChoice??null;
+    state.chosenTick=draft.chosenTick??null;
+  } else {
+    state.questions=Array.from({length:BOSS_QUESTIONS},()=>makeQuestion(state.mode,state.level));
+    state.index=0; state.stars=0; resetQuestionState();
+  }
+  state.view='game';
+  saveBossDraft(); render();
+  playSound('boss');
+}
+function completeBossFight() {
+  const stage=state.adventureStage;
+  state.adventureData.completed[stage]=true;
+  state.adventureData.best[stage]=Math.max(state.adventureData.best[stage],state.bossStageStars);
+  if (state.adventureData.draft?.stage===stage) state.adventureData.draft=null;
+  writeAdventureData();
+  state.bossNewBadge=!state.rewardData.bosses[stage];
+  state.bossCoins=state.bossNewBadge?25:0;
+  if (state.bossNewBadge) {
+    state.rewardData.bosses[stage]=true;
+    state.rewardData.coins+=25;
+  }
+  state.rewardData.bossDraft=null;
+  writeRewardData();
+  state.stars=state.bossStageStars;
+  state.view='adventure-result';
+  render();
+  playSound('victory');
+}
+function renderReward() {
+  const tile=state.rewardTile;
+  const chest=rewardKind(tile)==='chest';
+  const title=chest?'Kincsesláda!':'Meglepetésmező!';
+  app.innerHTML=`<section class="reward-scene ${state.rewardClaimed?'reward-open':''}">
+    <p class="eyebrow">✨ ${Math.floor(tile/5)+1}. BIRODALOM · ${tile+1}. MEZŐ</p>
+    <div class="reward-object" aria-hidden="true">${state.rewardClaimed?'💰':chest?'🎁':'❓'}</div>
+    <h1>${state.rewardClaimed?'Kincs megszerezve!':title}</h1>
+    <p>${state.rewardClaimed?'A jutalom már a kincstáradban van.':'A kincs mindig játékbeli jutalom, nem kell hozzá vásárolni.'}</p>
+    ${state.rewardClaimed?`<div class="reward-payout">🪙 +${state.rewardAmount} érme</div><p class="reward-total">Összes érméd: <strong>${state.rewardData.coins}</strong></p>`:''}
+    <div class="result-buttons"><button type="button" class="primary-button" data-action="${state.rewardClaimed?'reward-continue':'reward-claim'}">${state.rewardClaimed?'Kaland folytatása →':'✨ Felfedem a jutalmat!'}</button></div>
+    ${state.rewardClaimed?confettiMarkup():''}
+  </section>`;
+}
+function confettiMarkup() {
+  return `<div class="reward-confetti" aria-hidden="true">${Array.from({length:18},(_,i)=>`<span style="--i:${i};--c:${i%4}">${i%2?'✦':'■'}</span>`).join('')}</div>`;
+}
+function renderBossArena() {
+  const b=BOSSES[state.adventureStage];
+  const hit=state.index+(state.locked?1:0);
+  return `<div class="boss-arena boss-${b.type}" aria-label="Főellenfél: ${b.name}">
+     <div class="boss-avatar ${state.locked?'boss-hit':''}" aria-hidden="true">${b.icon}<span class="boss-glow"></span></div>
+     <div class="boss-copy"><span class="boss-kicker">⚔️ BIRODALMI FŐELLENFÉL</span>
+       <h2>${b.name}</h2><p>„${b.motto}”</p>
+       <div class="boss-health" role="progressbar" aria-valuemin="0" aria-valuemax="${BOSS_QUESTIONS}" aria-valuenow="${BOSS_QUESTIONS-hit}" aria-label="Főellenfél megmaradt kihívásai">${Array.from({length:BOSS_QUESTIONS},(_,i)=>`<span class="${i<hit?'lost':''}">${i<hit?'✦':'❤️'}</span>`).join('')}</div>
+       <small>${hit} / ${BOSS_QUESTIONS} sikeres kihívás · Nincs időkorlát</small>
+     </div>
+  </div>`;
+}
+function renderBadgeShelf() {
+  const earned=state.rewardData.bosses.filter(Boolean).length;
+  return `<section class="badge-shelf" aria-label="Jutalmak és jelvények">
+    <div class="section-head"><h2>🏅 Jelvénygyűjtemény</h2><span>${earned}/7 megszerzett jelvény</span></div>
+    <p>Győzd le a birodalmak főellenfeleit! A jelvények és érmék csak játékbeli jutalmak.</p>
+    <div class="badge-grid">${BOSSES.map((boss,i)=>`<div class="earned-badge ${state.rewardData.bosses[i]?'is-earned':'is-locked'}"><span aria-hidden="true">${state.rewardData.bosses[i]?boss.icon:'🔒'}</span><strong>${boss.badge}</strong><small>${state.rewardData.bosses[i]?'Megszerezve!':'Még zárolva'}</small></div>`).join('')}</div>
+    <div class="milestone-row"><span>${earned>=3?'🥈':'🔒'} Ezüst kalandor – 3 jelvény</span><span>${earned===7?'🏆':'🔒'} Arany számmester – 7 jelvény</span></div>
+  </section>`;
+}
+let audioCtx=null;
+function playSound(kind) {
+  if (!state.soundEnabled) return;
+  try {
+    const AudioEngine=window.AudioContext||window.webkitAudioContext;
+    if (!AudioEngine) return;
+    if (!audioCtx) audioCtx=new AudioEngine();
+    if (audioCtx.state==='suspended') audioCtx.resume().catch(()=>{});
+    const patterns={
+      correct:[[520,0,.09],[700,.11,.11]],error:[[270,0,.1],[240,.12,.12]],
+      mystery:[[450,0,.08],[560,.12,.08]],treasure:[[510,0,.10],[640,.13,.1],[780,.28,.16],[990,.47,.19]],
+      boss:[[240,0,.12],[300,.16,.12],[375,.32,.15]],victory:[[400,0,.11],[530,.12,.11],[670,.24,.12],[880,.40,.24]],
+      click:[[600,0,.09]]};
+    const now=audioCtx.currentTime;
+    (patterns[kind]||patterns.click).forEach(([hz,delay,duration])=>{
+      const oscillator=audioCtx.createOscillator(), gain=audioCtx.createGain();
+      oscillator.type=kind==='error'?'triangle':'sine';oscillator.frequency.value=hz;
+      gain.gain.setValueAtTime(.0001,now+delay);
+      gain.gain.exponentialRampToValueAtTime(.045,now+delay+.014);
+      gain.gain.exponentialRampToValueAtTime(.0001,now+delay+duration);
+      oscillator.connect(gain);gain.connect(audioCtx.destination);
+      oscillator.start(now+delay);oscillator.stop(now+delay+duration+.03);
+    });
+  } catch(error) { /* A hang nem akadályozhatja meg a játékot. */ }
+}
+function soundButton() {
+  return `<button type="button" class="sound-toggle" data-action="sound" aria-pressed="${state.soundEnabled}" aria-label="Játékhangok ${state.soundEnabled?'kikapcsolása':'bekapcsolása'}">${state.soundEnabled?'🔊 Hang: be':'🔇 Hang: ki'}</button>`;
+}
+
 // --- Kaland mód: térkép, 7 kapu, automatikus helyi mentés ---
 function emptyAdventureData() {
   return { completed: Array(ADVENTURE_STAGES.length).fill(false), best: Array(ADVENTURE_STAGES.length).fill(0), draft: null };
@@ -333,6 +553,7 @@ function saveAdventureDraft() {
 }
 function openAdventureMap() {
   state.adventureData = readAdventureData();
+  state.rewardData = readRewardData();
   // A térképre visszatérve a bábu a legutóbbi jó válasz helyéről ugrik előre.
   if (state.view === 'game' && state.playKind === 'adventure' && state.lastStepFrom !== undefined) {
     state.boardAnimationFrom = state.lastStepFrom;
@@ -348,7 +569,9 @@ function startAdventureStage(stage) {
   state.lastStepFrom = undefined;
   if (!Number.isInteger(stage) || stage < 0 || stage >= ADVENTURE_STAGES.length) return;
   state.adventureData = state.adventureData || readAdventureData();
+  state.rewardData = state.rewardData || readRewardData();
   if (!isAdventureUnlocked(stage)) return;
+  if (state.rewardData.bossDraft?.stage === stage) { startBossFight(stage); return; }
   state.playKind = 'adventure';
   state.adventureStage = stage;
   state.mode = ADVENTURE_STAGES[stage].id;
@@ -474,7 +697,11 @@ function renderBoard(progress) {
     const completed=stageProgress>=tileIndex%5+1;
     const unlocked=stage===0 || progress.completed[stage-1];
     const gate=tileIndex%5===4;
-    return `<button type="button" class="board-tile voxel-tile ${completed?'tile-done':''} ${unlocked?'tile-unlocked':'tile-locked'} ${gate?'tile-gate':''} ${position===tileIndex+1?'tile-current':''}" style="left:${loc.x/1100*100}%;top:${loc.y/1225*100}%" data-action="stage" data-stage="${stage}" ${unlocked?'':'disabled'} aria-label="${tileIndex+1}. mező, ${ADVENTURE_STAGES[stage].name}${unlocked?', megnyitható':', lezárva'}" title="${ADVENTURE_STAGES[stage].name}"><span class="board-tile-number">${gate?'★':tileIndex+1}</span></button>`;
+    const special=rewardKind(tileIndex);
+    const collect=canCollectBoardReward(tileIndex,progress);
+    const symbol=gate?'⚔️':special==='chest'?'🎁':special==='surprise'?'❔':'';
+    const mark=collect?'revealable':rewardCollected(tileIndex)?'collected':'';
+    return `<button type="button" class="board-tile voxel-tile ${completed?'tile-done':''} ${unlocked?'tile-unlocked':'tile-locked'} ${gate?'tile-gate':''} ${special?'tile-reward '+mark:''} ${position===tileIndex+1?'tile-current':''}" style="left:${loc.x/1100*100}%;top:${loc.y/1225*100}%" data-action="${collect?'collect-tile':'stage'}" data-stage="${stage}" data-tile="${tileIndex}" ${unlocked?'':'disabled'} aria-label="${tileIndex+1}. mező, ${ADVENTURE_STAGES[stage].name}${collect?', átvehető jutalom':unlocked?', megnyitható':', lezárva'}" title="${ADVENTURE_STAGES[stage].name}"><span class="board-tile-number">${gate?'★':tileIndex+1}</span>${symbol?`<span class="tile-gift-icon" aria-hidden="true">${symbol}</span>`:''}</button>`;
   }).join('');
   const hero=HEROES.find(h=>h.id===state.hero) || HEROES[0];
   return `<div class="board-scroll" role="region" tabindex="0" aria-label="35 mezős blokkvilág társasjátéktábla; kisebb kijelzőn oldalra görgethető">
@@ -487,6 +714,7 @@ function renderBoard(progress) {
 }
 function renderAdventureMap() {
   state.adventureData = readAdventureData();
+  state.rewardData=readRewardData();
   const progress = state.adventureData;
   const done = progress.completed.filter(Boolean).length;
   const totalStars = progress.best.reduce((sum, n) => sum + n, 0);
@@ -494,45 +722,50 @@ function renderAdventureMap() {
   const position=boardPosition(progress);
   app.innerHTML = `<section class="adventure-hero board-hero">
     <button class="text-button adventure-back" type="button" data-action="home">← Vissza a főmenübe</button>
-    <p class="eyebrow">🧱 BLOKK-KALAND • 4. VERZIÓ</p>
-    <h1>Számország <span>blokkvilága</span></h1>
-    <p>Válassz egy mozgó, kockafejű hőst, fedezd fel a hét színes blokk-birodalmat, és juss el a kincses várba! <strong>Minden helyes megoldás egy mezővel visz előrébb.</strong></p>
-    <div class="adventure-hero-stats"><span>🎲 ${position} / 35 mező</span><span>🔓 ${done} / 7 kapu</span><span>⭐ ${totalStars} / 35 csillag</span></div>
+    <p class="eyebrow">🎁 KINCSVADÁSZAT • 5. VERZIÓ</p>
+    <h1>Számország <span>kincsvadászata</span></h1>
+    <p>Járd be a hét blokk-birodalmat! Oldj meg matekfeladatokat, nyiss kincsesládákat, gyűjts jelvényeket, és győzd le a hét főellenfelet. <strong>Minden helyes megoldás egy mezővel visz előrébb.</strong></p>
+    <div class="adventure-hero-stats"><span>🎲 ${position} / 35 mező</span><span>🔓 ${done} / 7 kapu</span><span>⭐ ${totalStars} / 35 csillag</span><span>🪙 ${state.rewardData.coins} érme</span><span>🏅 ${state.rewardData.bosses.filter(Boolean).length} / 7 jelvény</span></div>
   </section>
   <section class="adventure-map-body board-body">
     <div class="board-toolbar">
       <div><h2>Válassz nehézséget!</h2><p>Mindegyik szintnek saját mentése van.</p></div>
       <div class="level-buttons adventure-level-buttons" role="group" aria-label="Kaland nehézsége">${LEVELS.map((lev,i)=>`<button type="button" class="level-button ${state.level===i?'selected':''}" data-action="map-level" data-level="${i}" aria-pressed="${i===state.level}">${lev.emoji} ${lev.name}</button>`).join('')}</div>
     </div>
+    <div class="reward-sound-row"><span>🎵 A hangeffektek szabadon ki-be kapcsolhatók.</span>${soundButton()}</div>
     <div class="hero-picker voxel-hero-picker"><strong>🧍 Válassz egy blokk-hőst!</strong><div class="hero-options" role="group" aria-label="Játékbábu kiválasztása">${HEROES.map(hero=>`<button type="button" class="hero-option ${state.hero===hero.id?'active':''}" data-action="hero" data-hero="${hero.id}" aria-pressed="${state.hero===hero.id}">${blockAvatar(hero.id,'picker')}<span class="hero-name">${hero.name}</span></button>`).join('')}</div></div>
-    ${draft ? `<div class="adventure-resume"><div><strong>📌 Félbehagyott küldetésed van</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index+1}. feladat az 5-ből</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatom →</button></div>` : ''}
+    ${state.rewardData.bossDraft?`<div class="adventure-resume boss-resume"><div><strong>⚔️ Félbehagyott főellenfél!</strong><span>${BOSSES[state.rewardData.bossDraft.stage].name}</span></div><button type="button" class="primary-button" data-action="boss" data-stage="${state.rewardData.bossDraft.stage}">Folytatom →</button></div>`:''}
+    ${draft && !state.rewardData.bossDraft ? `<div class="adventure-resume"><div><strong>📌 Félbehagyott küldetésed van</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index+1}. feladat az 5-ből</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatom →</button></div>` : ''}
     <div class="board-frame"><div class="board-heading"><span>🧱 BLOKKVILÁG TÁRSASTÁBLA</span><span>7 BIRODALOM · 35 MEZŐ</span></div>${renderBoard(progress)}<p class="board-scroll-tip">📱 Telefonon a pályát oldalirányban is görgetheted.</p></div>
-    <div class="board-legend"><span>🧍 A blokk-hősöd jelzi, hol tartasz</span><span>✅ Zöld mező: teljesítve</span><span>🔒 Szürke mező: még zárva</span></div>
-    <div class="board-missions"><h2>🚩 Válassz megnyitott állomást!</h2><p>A következő kapu öt megoldott feladat után nyílik ki. A már teljesített pályákat bármikor újrajátszhatod.</p>
+    <div class="board-legend"><span>🧍 A blokk-hősöd jelzi, hol tartasz</span><span>✅ Zöld mező: teljesítve</span><span>🔒 Szürke mező: még zárva</span><span>🎁 Kincsesláda · ❔ Meglepetés · ⚔️ Főellenfél</span></div>
+    <div class="board-missions"><h2>🚩 Válassz megnyitott állomást!</h2><p>Öt mező után a birodalom főellenfele vár rád: két extra matekfeladattal győzheted le. A korábban teljesített V4-pályák továbbra is nyitva maradnak.</p>
       <div class="board-mission-grid">${ADVENTURE_STAGES.map((mode,i)=>{
         const unlocked=isAdventureUnlocked(i), completed=progress.completed[i];
-        return `<button type="button" class="board-mission ${completed?'mission-complete':''}" data-action="stage" data-stage="${i}" ${unlocked?'':'disabled'}><span class="board-mission-emoji">${unlocked?mode.emoji:'🔒'}</span><span><strong>${i+1}. ${mode.name}</strong><small>${completed?`⭐ ${progress.best[i]}/5 · Újrajátszható`:draft?.stage===i?'▶ Folytatás':unlocked?'▶ Kezdés':'Még zárva'}</small></span><span class="board-mission-arrow">${unlocked?'→':'·'}</span></button>`;
+        const battleAvailable=completed||state.rewardData.bossDraft?.stage===i;
+        return `<div class="mission-group"><button type="button" class="board-mission ${completed?'mission-complete':''}" data-action="stage" data-stage="${i}" ${unlocked?'':'disabled'}><span class="board-mission-emoji">${unlocked?mode.emoji:'🔒'}</span><span><strong>${i+1}. ${mode.name}</strong><small>${completed?`⭐ ${progress.best[i]}/5 · Újrajátszható`:draft?.stage===i?'▶ Folytatás':unlocked?'▶ Kezdés':'Még zárva'}</small></span><span class="board-mission-arrow">${unlocked?'→':'·'}</span></button>${battleAvailable?`<button type="button" class="boss-shortcut" data-action="boss" data-stage="${i}">${state.rewardData.bosses[i]?'🏅 Főellenfél újrakihívása':'⚔️ Főellenfél kihívása'}</button>`:''}</div>`;
       }).join('')}</div></div>
+    ${renderBadgeShelf()}
     ${done===7?'<div class="adventure-treasure">🏆 <strong>Gratulálok! Számország minden kapuját kinyitottad!</strong><p>A megszerzett csillagokat a táblán újrajátszással is gyarapíthatod.</p></div>':''}
-    <p class="adventure-save-note">💾 A haladás és a bábu választása ezen az eszközön, ebben a böngészőben mentődik. Nem szinkronizálódik automatikusan más eszközre. A korábbi Kaland mód eredményei megmaradnak.</p>
+    <p class="adventure-save-note">💾 A haladás és a bábu választása ezen az eszközön, ebben a böngészőben mentődik. Nem szinkronizálódik automatikusan más eszközre. A korábbi Kaland mód eredményei és a V4-ben megnyitott birodalmak megmaradnak.</p>
   </section>`;
 }
 function renderAdventureResult() {
-  const stage = state.adventureStage;
-  const mode = ADVENTURE_STAGES[stage];
-  const last = stage === ADVENTURE_STAGES.length - 1;
-  app.innerHTML = `<section class="result-screen adventure-result">
-    <div class="result-block-hero">${blockAvatar(state.hero,'victory',true)}</div><div class="result-emoji board-victory" aria-hidden="true">${last ? '🏆' : '🔑'}</div>
-    <p class="eyebrow">🎉 ${stage + 1}. KAPU KINYITVA!</p>
-    <h1>${last ? 'Megmentetted Számországot!' : 'Kinyitottad a következő kaput!'}</h1>
-    <p>${mode.name}: mind az 5 feladatot megoldottad. ${last ? 'Mind a hét állomáson végigértél!' : 'Most már egy újabb állomás is elérhető a térképen.'}</p>
-    <div class="score-large" aria-label="${state.stars} az 5 csillagból">⭐ ${state.stars}<span> / 5</span></div>
-    <div class="best-score">🏅 Ezen a kapun a legjobb eredményed: ${state.adventureData.best[stage]} / 5</div>
-    <div class="result-buttons">
-       ${last ? '' : `<button type="button" class="primary-button" data-action="next-stage">Következő kapu →</button>`}
-       <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button>
-    </div>
-    <p class="info-bar">A csillag elsőre helyes megoldásért jár. Ha hibáztál, attól a küldetést még teljesítetted. Újrajátszással javíthatod a csillagjaid számát.</p>
+  const stage=state.adventureStage;
+  const mode=ADVENTURE_STAGES[stage];
+  const boss=BOSSES[stage];
+  const last=stage===ADVENTURE_STAGES.length-1;
+  app.innerHTML=`<section class="result-screen adventure-result victory-result">
+    ${confettiMarkup()}
+    <div class="result-block-hero">${blockAvatar(state.hero,'victory',true)}</div>
+    <div class="result-emoji" aria-hidden="true">${last?'🏆':'🎖️'}</div>
+    <p class="eyebrow">🎉 ${stage+1}. BIRODALOM MEGMENTVE!</p>
+    <h1>${last?'Számország bajnoka lettél!':'Legyőzted a főellenfelet!'}</h1>
+    <p><strong>${boss.name}</strong> legyőzve! ${mode.name}: a kapu öt feladatát és a főellenfél két kihívását is megoldottad.</p>
+    <div class="victory-prizes"><span>⭐ ${state.stars} / 5 csillag</span><span>🏅 ${boss.badge}</span><span>🪙 ${state.bossNewBadge?'+25 új érme':'A jelvény már megvolt'}</span></div>
+    <p class="best-score">A birodalom eddigi legjobb eredménye: ${state.adventureData.best[stage]} / 5 csillag.</p>
+    <div class="result-buttons">${last?'':`<button type="button" class="primary-button" data-action="next-stage">Következő birodalom →</button>`}
+       <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button></div>
+    <p class="info-bar">Minden főellenfél gyakorolható újra. Az érméket és a jelvényeket az első győzelemért kapod, így nincsen végtelen jutalomgyűjtés.</p>
   </section>`;
 }
 function renderChoices(q) {
@@ -591,15 +824,16 @@ function renderQuestionContents(q) {
 function renderBoardMini() {
   const step=state.index+(state.locked?1:0);
   const hero=HEROES.find(h=>h.id===state.hero) || HEROES[0];
-  return `<div class="mini-board" aria-label="Társasjáték-állás: ${step} az 5 mezőből"><span class="mini-board-label">🧱 A blokk-hősöd minden jó megoldás után ugrik egyet!</span><div class="mini-track"><span class="mini-start">START</span>${Array.from({length:5},(_,i)=>`<span class="mini-tile ${i<step?'mini-done':''} ${i===step-1?'mini-current':''}">${i===step-1?`<span class="mini-pawn">${blockAvatar(state.hero,'mini')}</span>`:i+1}</span>`).join('')}<span class="mini-gate">🔑</span></div></div>`;
+  return `<div class="mini-board" aria-label="Társasjáték-állás: ${step} az 5 mezőből"><span class="mini-board-label">🧱 A blokk-hősöd minden jó megoldás után ugrik egyet!</span><div class="mini-track"><span class="mini-start">START</span>${Array.from({length:5},(_,i)=>`<span class="mini-tile ${i<step?'mini-done':''} ${i===step-1?'mini-current':''}">${i===step-1?`<span class="mini-pawn">${blockAvatar(state.hero,'mini')}</span>`:i===4?'⚔️':i===1||i===3?'🎁':i===2?'❔':i+1}</span>`).join('')}<span class="mini-gate">🔑</span></div></div>`;
 }
 function renderGame() {
   const q = state.questions[state.index];
   const progress = Math.round((state.index / state.questions.length) * 100);
-  app.innerHTML = `<div class="game-wrap">
-    <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure' ? 'map' : 'home'}">← ${state.playKind === 'adventure' ? 'Vissza a térképhez' : 'Vissza a főmenübe'}</button><span class="stars">⭐ ${state.stars} csillag</span></div>
-    ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🎲 Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>${renderBoardMini()}` : ''}
-    <div class="game-meta"><span>${MODES.find(m => m.id === state.mode).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. feladat</span></div>
+  const bossMode=state.playKind==='boss';
+  app.innerHTML = `<div class="game-wrap ${bossMode?'game-boss':''}">
+    <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure'||bossMode ? 'map' : 'home'}">← ${state.playKind === 'adventure'||bossMode ? 'Vissza a térképhez' : 'Vissza a főmenübe'}</button><span class="stars">${bossMode?'⚔️ Főellenfél harc':`⭐ ${state.stars} csillag`}</span>${soundButton()}</div>
+    ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🎲 Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>${renderBoardMini()}` : bossMode?renderBossArena():''}
+    <div class="game-meta"><span>${MODES.find(m => m.id === state.mode).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. ${bossMode?'főellenfél-feladat':'feladat'}</span></div>
     <div class="progress-track" role="progressbar" aria-valuenow="${state.index}" aria-valuemin="0" aria-valuemax="${state.questions.length}" aria-label="A játék előrehaladása"><div class="progress-fill" style="width: ${progress}%"></div></div>
     <section class="question-box" aria-label="Aktuális feladat">
       <span class="question-tag">${q.label}</span>
@@ -608,9 +842,9 @@ function renderGame() {
       ${renderQuestionContents(q)}
     </section>
     <div id="answer-feedback" aria-live="polite" aria-atomic="true">
-      ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? '🌟 Ügyes vagy, jó megoldás!' : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}${state.feedback.type === 'success' && state.playKind === 'adventure' ? '<span class="answer-confetti" aria-hidden="true">✦ ✨ ✦</span>' : ''}</div>` : ''}
+      ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? (bossMode?'⚔️ Talált! Sérült a főellenfél!':'🌟 Ügyes vagy, jó megoldás!') : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}${state.feedback.type === 'success' && state.playKind === 'adventure' ? '<span class="answer-confetti" aria-hidden="true">✦ ✨ ✦</span>' : ''}</div>` : ''}
     </div>
-    ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${state.index === state.questions.length - 1 ? (state.playKind === 'adventure' ? 'Kapu kinyitása 🔑' : 'Eredmény megtekintése 🏆') : 'Következő feladat →'}</button></div>` : ''}
+    ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${bossMode?(state.index===BOSS_QUESTIONS-1?'Főellenfél legyőzése 🏆':'Következő támadás ⚔️'):pendingRewardTile()>=0?'Jutalommező felfedezése 🎁':state.index === state.questions.length - 1 ? (state.playKind === 'adventure' ? 'Főellenfél kihívása ⚔️' : 'Eredmény megtekintése 🏆') : 'Következő feladat →'}</button></div>` : ''}
   </div>`;
 }
 function storeBestScore() {
@@ -647,21 +881,32 @@ function render() {
   if (state.view === 'result') renderResult();
   if (state.view === 'map') renderAdventureMap();
   if (state.view === 'adventure-result') renderAdventureResult();
+  if (state.view === 'reward') renderReward();
 }
 function tryAnswer(correct, userFriendlyError) {
   const q = state.questions[state.index];
   if (state.locked) return;
   if (correct) {
-    if (state.playKind === 'adventure') state.lastStepFrom = state.adventureStage * ADVENTURE_QUESTIONS + state.index;
+    if (state.playKind === 'adventure') {
+      state.lastStepFrom = state.adventureStage * ADVENTURE_QUESTIONS + state.index;
+      const tile=state.lastStepFrom;
+      if (!state.rewardData.tileCoins[tile]) {
+        state.rewardData.tileCoins[tile]=true;
+        state.rewardData.coins+=2; // Egyetlen alkalommal jár minden elért mezőért.
+        writeRewardData();
+      }
+    }
     if (!state.mistakes) state.stars += 1;
+    playSound(state.playKind==='boss'?'boss':'correct');
     state.locked = true;
     state.feedback = { type: 'success', text: q.explain };
   } else {
     state.mistakes = true;
     state.feedback = { type: 'error', text: userFriendlyError || q.tip };
+    playSound('error');
   }
   render();
-  saveAdventureDraft();
+  saveCurrentGame();
 }
 function checkInteger(text) { return /^[0-9]{1,4}$/.test(String(text).trim()); }
 function handleSubmit(form) {
@@ -689,6 +934,28 @@ app.addEventListener('click', event => {
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
   if (action === 'map') { openAdventureMap(); return; }
+  if (action==='sound') {
+    state.soundEnabled=!state.soundEnabled;
+    try { window.localStorage.setItem(SOUND_SAVE_KEY, state.soundEnabled?'on':'off'); } catch(error) {}
+    if (state.soundEnabled) playSound('click');
+    render(); return;
+  }
+  if (action==='reward-claim') { claimReward(); return; }
+  if (action==='reward-continue') { leaveRewardEvent(); return; }
+  if (action==='collect-tile') {
+    const tile=Number(button.dataset.tile);
+    if (state.view==='map' && canCollectBoardReward(tile,state.adventureData)) startRewardEvent(tile,'map');
+    return;
+  }
+  if (action==='boss') {
+    const stage=Number(button.dataset.stage);
+    state.adventureData=state.adventureData||readAdventureData();
+    state.rewardData=state.rewardData||readRewardData();
+    if (state.adventureData.completed[stage]||state.rewardData.bossDraft?.stage===stage) {
+      startBossFight(stage,state.adventureData.best[stage]);
+    }
+    return;
+  }
   if (action === 'hero') {
     const hero=button.dataset.hero;
     if (!HEROES.some(h=>h.id===hero)) return;
@@ -710,15 +977,17 @@ app.addEventListener('click', event => {
   if (action === 'home') { state.view = 'home'; render(); return; }
   if (action === 'next') {
     if (!state.locked) return;
-    state.index += 1;
-    if (state.index >= state.questions.length) {
-      if (state.playKind === 'adventure') completeAdventureStage();
-      else { storeBestScore(); state.view = 'result'; }
-    }
-    else resetQuestionState();
-    if (state.view === 'game') saveAdventureDraft();
+    const rewardTile=pendingRewardTile();
+    if (rewardTile>=0) { startRewardEvent(rewardTile,'game'); return; }
+    state.index+=1;
+    if (state.index>=state.questions.length) {
+      if (state.playKind==='boss') { completeBossFight(); return; }
+      if (state.playKind==='adventure') { startBossFight(state.adventureStage,state.stars); return; }
+      storeBestScore(); state.view='result';
+    } else resetQuestionState();
+    if (state.view==='game') saveCurrentGame();
     render();
-    app.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    app.scrollIntoView({behavior:'smooth',block:'start'});
     return;
   }
   if (state.view !== 'game' || state.locked) return;
@@ -734,11 +1003,11 @@ app.addEventListener('click', event => {
     if (!state.selected.includes(i) && i >= 0 && i < q.numbers.length) state.selected.push(i);
     state.feedback = null;
     render();
-    saveAdventureDraft();
+    saveCurrentGame();
   } else if (action === 'order-undo') {
-    state.selected.pop(); state.feedback = null; render(); saveAdventureDraft();
+    state.selected.pop(); state.feedback = null; render(); saveCurrentGame();
   } else if (action === 'order-clear') {
-    state.selected = []; state.feedback = null; render(); saveAdventureDraft();
+    state.selected = []; state.feedback = null; render(); saveCurrentGame();
   } else if (action === 'order-check') {
     if (state.selected.length !== q.numbers.length) return;
     const submitted = state.selected.map(i => q.numbers[i]);
@@ -751,6 +1020,8 @@ try {
   const savedHero=window.localStorage.getItem(HERO_SAVE_KEY);
   if (HEROES.some(h=>h.id===savedHero)) state.hero=savedHero;
 } catch(error) { /* Tárhely nélkül az alapértelmezett róka bábu marad. */ }
+try { state.soundEnabled=window.localStorage.getItem(SOUND_SAVE_KEY)==='on'; }
+catch(error) { state.soundEnabled=false; }
 const brandLink = document.getElementById('brandLink');
 brandLink.addEventListener('click', event => { event.preventDefault(); state.view = 'home'; render(); });
 render();
