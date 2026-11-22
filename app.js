@@ -103,8 +103,53 @@ const state = {
   rewardData: null, rewardTile: -1, rewardReturn: 'map', rewardClaimed: false, rewardAmount: 0,
   bossStageStars: 0, bossNewBadge: false, bossCoins: 0, soundEnabled: false,
   autoSmartScheduled: 0, reviewWins: 0, reviewMastered: 0, reviewTopic: 'all', reviewFeedback: '',
-  shopMessage: '', backupMessage: ''
+  shopMessage: '', backupMessage: '',
+  playerName: '', playerNotice:'', onlineStatus:'', onlineLastId:''
 };
+
+// --- V11: kötelező név a játék indításához, elkülönített online eredmények ---
+const PLAYER_SESSION_KEY='szammester1000_player_v11';
+function escapePlayerText(value){ return String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function readPlayerSession(){
+  try { const name=sessionStorage.getItem(PLAYER_SESSION_KEY)||'';return /^[\p{L}\p{M}\p{N} .'-]{2,60}$/u.test(name)&&/\p{L}/u.test(name)?name:''; }
+  catch(e){return '';}
+}
+function renderPlayerGate(){
+  app.innerHTML=`<section class="player-gate"><div class="player-gate-symbol" aria-hidden="true">🧑‍🚀</div>
+    <p class="eyebrow">SZÁMMESTER 1000 · V11</p><h1>Hogy szólíthatunk?</h1>
+    <p>A játék előtt mindenki adja meg a nevét. A tanulási eredményeken ez a név fog szerepelni.</p>
+    <form id="playerNameForm" class="player-gate-form"><label for="playerNameInput"><strong>Játékos neve</strong></label>
+      <input id="playerNameInput" name="playerName" type="text" required minlength="2" maxlength="60" autocomplete="off" placeholder="Például: Anna" aria-describedby="playerInfo" autofocus>
+      <button class="primary-button" type="submit">Belépek a játékba →</button></form>
+    <p class="player-privacy" id="playerInfo">🔒 A megadott név és a befejezett feladatok eredménye a játék üzemeltetőjének zárt online naplójába kerülhet. Csak az arra jogosult kezelő láthatja. <a href="adatkezeles.html" target="_blank" rel="noopener noreferrer">Adatkezelési tájékoztató</a>. Kérj segítséget szülőtől vagy pedagógustól, ha nem tudod, milyen nevet írj!</p>
+    <p class="player-notice" role="status">${escapePlayerText(state.playerNotice)}</p>
+    <p class="player-setup-note">${window.SZAMMESTER_FIREBASE_CONFIG?.apiKey && !String(window.SZAMMESTER_FIREBASE_CONFIG.apiKey).includes('IDE_') ? 'Az online eredmények küldése a felhőbeállításoktól függ.' : '⚠️ Az online napló még nincs beállítva. A játék helyben kipróbálható, de az eredmény nem kerül fel az internetre.'}</p>
+  </section>`;
+}
+function reportStatus(text){
+  state.onlineStatus=text;
+  const el=document.querySelector('#onlineSendStatus');if(el)el.textContent=text;
+}
+function completeOnlineReport(kind,score,total,mode){
+  if (!state.playerName) return;
+  const id='run_'+(crypto?.randomUUID?.()||('r'+Date.now()+'_'+Math.random().toString(36).slice(2)));
+  const record={id,name:state.playerName,category:kind,mode:mode||state.mode,level:state.level,stars:Math.max(0,Math.min(total,score)),total};
+  reportStatus('☁️ Eredmény továbbítása...');
+  // A további játékot sem a hálózat, sem a felhő konfigurációja nem akadályozhatja.
+  Promise.resolve().then(async()=>{
+    if (!window.SzamOnline) {
+      await Promise.race([new Promise(resolve=>window.addEventListener('szammester-online-ready',resolve,{once:true})),new Promise((_,reject)=>setTimeout(()=>reject(Error('Az online modul nem töltődött be.')),7000))]);
+    }
+    if (!window.SzamOnline?.configured) throw Error('Az online napló még nincs beállítva.');
+    await Promise.race([window.SzamOnline.send(record),new Promise((_,reject)=>setTimeout(()=>reject(Error('A küldés visszaigazolása elmaradt.')),15000))]);
+    reportStatus('✅ Az eredmény bekerült a zárt online naplóba.');
+  }).catch(error=>{
+    console.warn('Online eredmény nem menthető:',error);
+    reportStatus('⚠️ Az online mentést nem sikerült visszaigazolni. Ellenőrizd az admin naplót és a Firebase-beállításokat.');
+  });
+}
+function onlineStatusHtml(){return `<p id="onlineSendStatus" class="online-send-status" role="status">${escapePlayerText(state.onlineStatus||'☁️ Online eredmények: készen áll.')}</p>`;}
+function playerTag(){return `<div class="player-tag" aria-label="Aktuális játékos"><span>👤 ${escapePlayerText(state.playerName)}</span><button type="button" data-action="player-switch">Játékosváltás</button></div>`;}
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (items) => items[rand(0, items.length - 1)];
@@ -573,7 +618,7 @@ function renderSmartHub() {
       <p>${count?'Egy körben legfeljebb 5 különböző hibás feladat jön elő. Nincs időkorlát és érmelevonás.':'Játssz egy szokásos kört! Ha valami nem sikerül, megjelenik itt a gyakorlólistádban.'}</p></div>
       <button type="button" class="primary-button" data-action="review-start" ${count?'':'disabled'}>🔁 ${count?'Ismétlés indítása':'Most nincs ismételnivaló'}</button>
     </div>
-    <p class="smart-privacy">🔐 A gyakorlólista kizárólag ebben a böngészőben tárolódik. Név, fiók és internetkapcsolat nem szükséges; más eszközön nem jelenik meg automatikusan.</p>
+    <p class="smart-privacy">🔐 A hibagyakorlólista továbbra is ebben a böngészőben tárolódik. A befejezett ismétlőkörök eredményösszesítése viszont a beállított online naplóba is bekerülhet.</p>
   </section>`;
 }
 function beginSmartReview() {
@@ -595,6 +640,7 @@ function renderSmartResult() {
     <div class="smart-counters"><div><span>✅</span><strong>${state.reviewWins}</strong><small>elsőre jó válasz</small></div>
       <div><span>🏅</span><strong>${state.reviewMastered}</strong><small>most megtanult feladat</small></div>
       <div><span>📌</span><strong>${d.queue.length}</strong><small>még gyakorolható</small></div></div>
+    ${onlineStatusHtml()}
     <div class="result-buttons"><button type="button" class="primary-button" data-action="review-home">🧠 Gyakorlóműhely</button><button type="button" class="secondary-button" data-action="home">Főmenü</button></div>
     <p class="info-bar">Egy elrontott feladat csak két külön ismétlés során adott, elsőre helyes válasz után kerül le a listáról. A kincsek, főellenfelek és kalandmentések érintetlenek maradnak.</p>
   </section>`;
@@ -731,6 +777,7 @@ async function restoreBackupFile(file) {
 
 function renderHome() {
   app.innerHTML = `
+    ${playerTag()}
     <section class="home-hero">
       <div class="hero-text">
         <p class="eyebrow">✦ TANULJ JÁTSZVA!</p>
@@ -742,7 +789,7 @@ function renderHome() {
     <section class="adventure-feature" aria-label="Új kalandmód">
       <div class="adventure-feature-icon block-feature-icon" aria-hidden="true">${blockAvatar(state.hero, 'feature')}</div>
       <div class="adventure-feature-text">
-        <span class="adventure-kicker">V10 • KALAND + KÁRTYÁK + MENTÉSVÉDELEM</span>
+        <span class="adventure-kicker">V11 • KALAND + KÁRTYÁK + ONLINE NAPLÓ</span>
         <h2>Számország: Kincsvadászat</h2>
         <p>Fedezd fel a 35 mezős blokkvilágot! Nyiss 14 kincsesládát, találj 7 meglepetésmezőt, és győzd le a 7 birodalom főellenfelét!</p>
       </div>
@@ -802,6 +849,7 @@ function renderHome() {
       </div>
       <div class="info-bar">💡 <strong>Tipp:</strong> Hibázni ér! A V6 megjegyzi az elrontott feladatokat, és később újra megmutatja őket. A kaland mentései, érméi és jelvényei változatlanok.</div>
     </section>
+    <section class="online-feature"><span>📊 ONLINE EREDMÉNYEK</span><h2>A saját eredményeid</h2><p>A befejezett gyakorlókörök és a legyőzött főellenfelek eredménye egy védett naplóba kerülhet. A naplót csak a jogosult kezelő nézheti meg; a játékosok egymás adatait nem látják.</p><p>${window.SzamOnline?.configured?'🟢 Felhőbeállítás betöltve':'🟠 A Firebase beállításáig az online napló nem aktív.'}</p><p>Másik gyermek játszik? A fenti „Játékosváltás” gombot használd!</p></section>
     <section class="backup-feature" aria-label="Mentések biztonsági másolata">
       <div class="backup-symbol" aria-hidden="true">🛡️</div>
       <div class="backup-body"><span class="backup-kicker">V10 · ADATVÉDELEM</span><h2>Őrizd meg a kalandodat!</h2>
@@ -987,6 +1035,7 @@ function completeBossFight() {
   state.rewardData.bossDraft=null;
   writeRewardData();
   state.stars=state.bossStageStars;
+  completeOnlineReport('adventure',state.stars,ADVENTURE_QUESTIONS,state.mode);
   state.view='adventure-result';
   render();
   playSound('victory');
@@ -1396,6 +1445,7 @@ function renderAdventureResult() {
     <p><strong>${boss.name}</strong> legyőzve! ${mode.name}: a kapu öt feladatát és a főellenfél két kihívását is megoldottad.</p>
     <div class="victory-prizes"><span>⭐ ${state.stars} / 5 csillag</span><span>🏅 ${boss.badge}</span><span>🪙 ${state.bossNewBadge?'+25 új érme':'A jelvény már megvolt'}</span></div>
     <p class="best-score">A birodalom eddigi legjobb eredménye: ${state.adventureData.best[stage]} / 5 csillag.</p>
+    ${onlineStatusHtml()}
     <div class="result-buttons">${shopUnlocked()?`<button type="button" class="primary-button" data-action="shop">🛍️ Megnyílt a karakterbolt! →</button>`:''}${last?'':`<button type="button" class="primary-button" data-action="next-stage">Következő birodalom →</button>`}
        <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button><button type="button" class="secondary-button" data-action="review-home">🧠 Hibáimból tanulok (${smartPendingCount()})</button></div>
     <p class="info-bar">Minden főellenfél gyakorolható újra. Az érméket és a jelvényeket az első győzelemért kapod, így nincsen végtelen jutalomgyűjtés.</p>
@@ -1541,11 +1591,13 @@ function renderResult() {
     <p>${message}</p>
     <div class="score-large" aria-label="${state.stars} a ${total} csillagból">⭐ ${state.stars}<span> / ${total}</span></div>
     <div class="best-score">🏅 Legjobb eredmény ebben a módban: ${state.best} / ${total}</div>
+    ${onlineStatusHtml()}
     <div class="result-buttons"><button type="button" class="primary-button" data-action="restart">🔁 Játssz újra!</button><button type="button" class="secondary-button" data-action="home">Másik küldetést választok</button><button type="button" class="secondary-button" data-action="review-home">🧠 Hibáimból tanulok (${smartPendingCount()})</button></div>
     <p class="info-bar">A csillag akkor jár, ha a feladat első próbálkozásra sikerül. Hibázás után is nyugodtan újrapróbálkozhatsz: a legfontosabb, hogy megértsd a megoldást.</p>
   </section>`;
 }
 function render() {
+  if (!state.playerName) {renderPlayerGate();return;}
   if (state.view === 'home') renderHome();
   if (state.view === 'game') renderGame();
   if (state.view === 'result') renderResult();
@@ -1614,6 +1666,13 @@ function handleSubmit(form) {
 }
 app.addEventListener('submit', event => {
   event.preventDefault();
+  if (event.target.id==='playerNameForm') {
+    const text=String(event.target.elements.playerName.value||'').trim().replace(/\s+/g,' ');
+    if (!/^[\p{L}\p{M}\p{N} .'-]{2,60}$/u.test(text)||! /\p{L}/u.test(text)) {state.playerNotice='Kérlek, legalább két karakterből álló nevet írj be!';render();return;}
+    state.playerName=text;state.playerNotice='';state.onlineStatus='';
+    try {sessionStorage.setItem(PLAYER_SESSION_KEY,text);}catch(e){}
+    state.view='home';render();return;
+  }
   handleSubmit(event.target);
 });
 app.addEventListener('change', event => {
@@ -1623,6 +1682,10 @@ app.addEventListener('click', event => {
   const button = event.target.closest('button[data-action]');
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
+  if (action === 'player-switch') {
+    try {sessionStorage.removeItem(PLAYER_SESSION_KEY);}catch(e){}
+    state.playerName='';state.playerNotice='';state.onlineStatus='';state.view='home';render();return;
+  }
   if (action === 'backup-export') { downloadBackup();return; }
   if (action === 'backup-import') { app.querySelector('#backupFile')?.click();return; }
   if (action === 'map') { state.shopMessage='';openAdventureMap(); return; }
@@ -1684,9 +1747,9 @@ app.addEventListener('click', event => {
     state.index+=1;
     if (state.index>=state.questions.length) {
       if (state.playKind==='boss') { completeBossFight(); return; }
-      if (state.playKind==='review') { state.view='smart-result';render();return; }
+      if (state.playKind==='review') {completeOnlineReport('review',state.reviewWins,state.questions.length,state.mode); state.view='smart-result';render();return; }
       if (state.playKind==='adventure') { startBossFight(state.adventureStage,state.stars); return; }
-      storeBestScore(); state.view='result';
+      storeBestScore(); completeOnlineReport(state.playKind==='cards'?'cards':'practice',state.stars,state.questions.length,state.mode); state.view='result';
     } else resetQuestionState();
     if (state.view==='game') saveCurrentGame();
     render();
@@ -1729,4 +1792,6 @@ try { state.soundEnabled=window.localStorage.getItem(SOUND_SAVE_KEY)==='on'; }
 catch(error) { state.soundEnabled=false; }
 const brandLink = document.getElementById('brandLink');
 brandLink.addEventListener('click', event => { event.preventDefault(); if(CARD_DECKS.some(d=>d.id===state.mode)) state.mode='mixed'; state.view = 'home'; render(); });
+state.playerName=readPlayerSession();
+window.addEventListener('szammester-online-ready',()=>{if(state.view==='home' && state.playerName)render();});
 render();

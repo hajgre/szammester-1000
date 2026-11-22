@@ -617,3 +617,23 @@ body { background:radial-gradient(circle at 4% 10%,#365ba3 0,transparent 30%),ra
 button:focus-visible, input:focus-visible, .brand:focus-visible{outline:3px solid #edb036;outline-offset:3px}
 @media(max-width:640px){.backup-feature{margin:20px 16px;gap:12px;padding:17px 15px}.backup-symbol{width:44px;height:44px;font-size:24px}.backup-actions{display:grid}.backup-download,.backup-restore{width:100%}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
+
+/* V11 – játékosazonosítás és online eredmények */
+.player-gate{max-width:690px;margin:clamp(26px,5vw,70px) auto;padding:clamp(24px,5vw,46px);border-radius:28px;text-align:center;background:linear-gradient(145deg,#f7faff,#e8f5ff);color:#24324a;box-shadow:0 22px 60px rgba(11,36,90,.17)}
+.player-gate-symbol{font-size:4.4rem;filter:drop-shadow(0 10px 9px #a7c5ea)}
+.player-gate h1{color:#24324a;font-size:clamp(2rem,5vw,3.1rem);margin:6px 0 12px}
+.player-gate p{line-height:1.55}
+.player-gate .eyebrow{color:#42599b}
+.player-gate-form{display:flex;gap:12px;flex-direction:column;margin:24px auto 14px;max-width:460px;text-align:left}
+.player-gate-form label{font-size:1.05rem}
+.player-gate-form input{width:100%;padding:15px 17px;border-radius:13px;border:2px solid #879bba;font:inherit;font-size:1.13rem;color:#1f2937;background:#fff}
+.player-gate-form input:focus{outline:3px solid #8fcfff;outline-offset:2px}
+.player-gate .player-privacy{font-size:.89rem;border-top:1px solid #b7cce0;padding-top:15px}
+.player-gate .player-setup-note{font-size:.84rem;color:#514c68;font-weight:650}
+.player-notice{color:#b12c43;font-weight:bold}
+.player-tag{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#f1f6ff;color:#1a345a;border:2px solid #adc6e9;border-radius:12px;padding:10px 15px;margin-bottom:15px;font-weight:700}
+.player-tag button{background:white;color:#25496c;border:1px solid #9db4d4;border-radius:9px;padding:7px 12px;cursor:pointer;font:inherit}
+.online-feature{padding:24px;border:2px solid #a6d5cf;border-radius:21px;background:#eefaf8;color:#1b4050;margin:20px 0}
+.online-feature h2{color:#173e52;margin:5px 0 12px}.online-feature>span{font-weight:800;letter-spacing:.07em;font-size:.78rem}
+.online-send-status{padding:12px 16px;margin:14px auto;color:#1d415b;background:#e7f6fd;border-radius:11px;max-width:620px;font-size:.93rem}
+@media(max-width:600px){.player-gate{margin:15px auto;padding:21px 15px}.player-tag{font-size:.89rem}.online-feature{padding:17px}}
