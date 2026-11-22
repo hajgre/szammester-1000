@@ -1,49 +1,40 @@
-# 🌟 Számmester 1000
+# 🗺️ Számmester 1000 – Számország hét kapuja (2.0)
 
-Magyar nyelvű, interaktív matematikai gyakorlójáték az 1000-es számkörben, többségi általános iskolai tanuláshoz.
+A már meglévő Számmester 1000 játék **új, térképes Kaland módja**. A nyolc eredeti gyakorló játékmód is megmaradt.
 
-## Hogyan indítsd el?
+## Újdonságok
 
-Az `index.html` fájlt megnyithatod böngészőben, internetkapcsolat nélkül is. A `style.css` és `app.js` fájl **maradjon ugyanabban a mappában**.
+- 7 egymás után feloldható kapu: számsorrend, helyi érték, alaki érték, valódi érték, számszomszédok, beváltások, számegyenes.
+- Minden kapuban **5 véletlenszerű feladat**, a korábbi **10 feladatos szabad gyakorlás** változatlanul elérhető.
+- 3 nehézség, egymástól független kalandmentésekkel.
+- Elsőre helyes megoldásért csillag; hibázás után is teljesíthető a kapu.
+- Legjobb csillageredmények, teljesített kapuk, és a félbehagyott küldetés automatikus mentése.
+- Mobilon és számítógépen is játszható, nincs időkorlát, nem szükséges felhasználói fiók.
 
-## Mit tartalmaz?
+**Fontos:** A mentés kizárólag a böngésző helyi tárhelyére (`localStorage`) történik. Másik eszközre nem kerül át és a böngésző adatainak törlésével elveszhet.
 
-- Számsorrend: növekvő és csökkenő rendezés
-- Helyi érték: egyes, tízes, százas, ezres
-- Alaki érték
-- Valódi érték
-- Számszomszédok: egyes, tízes, százas
-- Beváltások: pl. `4sz + 13t + 36e`
-- Számok helye a számegyenesen
-- Vegyes gyakorlás
+## Hogyan próbáld ki?
 
-3 nehézségi szint, játékonként 10 véletlenszerűen generált feladat. Minden kérdés újrapróbálható. Csillag az elsőre helyes válaszért jár. A legjobb eredményt az adott böngésző helyben tárolja.
+Tartsd egy mappában az `index.html`, `style.css`, `app.js` fájlokat. Nyisd meg duplakattintással az `index.html` fájlt. A játék internet nélkül is működik.
 
-**Adatvédelem:** nem kér nevet vagy e-mail címet, nem használ külső adatbázist, nem tölt fel tanulói adatokat. A felület magyar nyelvű és időkorlát nélküli.
+## Hogyan frissítsd a GitHub Pages játékodat?
 
-## A három fontos fájl
+Repo: https://github.com/hajgre/szammester-1000
 
-- `index.html` = a játék szerkezete (HTML)
-- `style.css` = a kinézete (CSS)
-- `app.js` = a feladatok, pontozás és működés (JavaScript)
+1. Nyisd meg a repositoryt, majd **Add file → Upload files**.
+2. A kicsomagolt csomagból **az `index.html`, `style.css`, `app.js`, `README.md` fájlokat** húzd a feltöltőbe.
+3. A GitHub felismeri az egyező fájlneveket, és felülírásra készül.
+4. A commit leírása legyen: `Kaland mód: Számország hét kapuja`.
+5. Kattints a **Commit changes** gombra.
+6. Az új változat a meglévő GitHub Pages linken lesz elérhető: https://hajgre.github.io/szammester-1000/
 
-## Közzététel GitHub Pages segítségével
+**Biztonság:** feltöltés előtt megőrizheted az eredeti verziót a GitHub verziótörténetében. A korábbi commitokra bármikor vissza lehet térni. Ha biztosra mennél, külön `kaland-fejlesztes` branchen is kipróbálhatod.
 
-1. GitHubon hozz létre egy **Public** tárolót `szammester-1000` néven.
-2. Nyisd meg a tárolót, és válaszd: **Add file → Upload files**. Töltsd fel a három fájlt (`index.html`, `style.css`, `app.js`) és ezt a README-t.
-3. Kattints: **Commit changes**.
-4. Menj ide: **Settings → Pages**.
-5. A **Build and deployment → Source** mezőnél válaszd: **Deploy from a branch**.
-6. A **Branch** sorban válaszd: **main** és **/(root)**, majd **Save**.
-7. A webcím alakja: `https://FELHASZNALONEV.github.io/szammester-1000/`.
+## Fájlok
 
-A közzététel pár percig tarthat. A saját GitHub-felhasználónevedet írd a `FELHASZNALONEV` helyére.
+- `index.html` – az oldal kerete.
+- `style.css` – stílusok, kalandtérkép.
+- `app.js` – matematikai feladatok, térkép, haladás mentése.
+- `README.md` – útmutató.
 
-## Hogyan fejlesztheted tovább?
-
-- Az `app.js` tetején a `QUESTIONS_PER_GAME` értéke szabályozza, hány feladat legyen egy menetben.
-- A `MODES` listában találod a játékmódok nevét és leírását.
-- A `makeOrdering`, `makePlace`, `makeFace`, `makeReal`, `makeNeighbors`, `makeExchange`, `makeNumberline` függvények készítik a feladatokat.
-- A `style.css`-ben változtathatod meg a színeket és méreteket.
-
-A program saját tanulási célra készült, külső csomagok nélkül. Nincs szerveroldali adatkezelés.
+A játék nem tárol tanulónevet és nem küld adatokat szerverre.

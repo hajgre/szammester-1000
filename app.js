@@ -21,6 +21,10 @@ const LEVELS = [
   { name: 'Mester', emoji: '🏆', text: 'Közeli számok, százas szomszédok és összetett beváltások.' }
 ];
 const QUESTIONS_PER_GAME = 10;
+const ADVENTURE_QUESTIONS = 5;
+const ADVENTURE_STAGES = MODES.filter(mode => mode.id !== 'mixed');
+// A 3 nehézségi szint kalandmentései egymástól függetlenek.
+const ADVENTURE_SAVE_KEY = 'szammester1000_adventure_v1_';
 const PLACE_NAMES = ['egyesek', 'tízesek', 'százasok', 'ezresek'];
 const PLACE_SHORT = ['egyes', 'tízes', 'százas', 'ezres'];
 const app = document.getElementById('app');
@@ -28,7 +32,8 @@ const state = {
   view: 'home', mode: 'mixed', level: 0,
   questions: [], index: 0, stars: 0,
   mistakes: false, locked: false, selected: [], inputs: {},
-  feedback: null, lastChoice: null, chosenTick: null, best: 0
+  feedback: null, lastChoice: null, chosenTick: null, best: 0,
+  playKind: 'practice', adventureStage: 0, adventureData: null
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -204,6 +209,15 @@ function renderHome() {
       </div>
       <div class="number-visual" aria-hidden="true"><span class="visual-chip">7</span><span class="visual-chip">100</span><span class="visual-chip">42</span><span class="visual-chip">✦</span></div>
     </section>
+    <section class="adventure-feature" aria-label="Új kalandmód">
+      <div class="adventure-feature-icon" aria-hidden="true">🗺️</div>
+      <div class="adventure-feature-text">
+        <span class="adventure-kicker">ÚJ • TÉRKÉPES KALAND</span>
+        <h2>Számország hét kapuja</h2>
+        <p>Oldd meg a küldetéseket, gyűjts csillagokat és nyisd ki a következő kaput! A haladásodat a böngésző megjegyzi.</p>
+      </div>
+      <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
+    </section>
     <section class="home-body" aria-label="Játék beállításai">
       <div class="section-head"><h2>🎮 Válassz egy küldetést!</h2><span>8 játékmód</span></div>
       <div class="mode-grid" role="group" aria-label="Játékmódok">
@@ -228,6 +242,7 @@ function renderHome() {
     </section>`;
 }
 function beginGame() {
+  state.playKind = 'practice';
   const types = MODES.filter(m => m.id !== 'mixed').map(m => m.id);
   const sequence = state.mode === 'mixed'
     ? shuffle([...types, ...Array.from({ length: QUESTIONS_PER_GAME - types.length }, () => pick(types))])
@@ -247,6 +262,152 @@ function resetQuestionState() {
   state.feedback = null;
   state.lastChoice = null;
   state.chosenTick = null;
+}
+// --- Kaland mód: térkép, 7 kapu, automatikus helyi mentés ---
+function emptyAdventureData() {
+  return { completed: Array(ADVENTURE_STAGES.length).fill(false), best: Array(ADVENTURE_STAGES.length).fill(0), draft: null };
+}
+function readAdventureData() {
+  const fresh = emptyAdventureData();
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(ADVENTURE_SAVE_KEY + state.level) || 'null');
+    if (!saved || !Array.isArray(saved.completed) || !Array.isArray(saved.best)) return fresh;
+    fresh.completed = fresh.completed.map((_, i) => saved.completed[i] === true);
+    fresh.best = fresh.best.map((_, i) => Math.max(0, Math.min(ADVENTURE_QUESTIONS, Number(saved.best[i]) || 0)));
+    const d = saved.draft;
+    if (d && Number.isInteger(d.stage) && d.stage >= 0 && d.stage < ADVENTURE_STAGES.length &&
+        Array.isArray(d.questions) && d.questions.length === ADVENTURE_QUESTIONS &&
+        Number.isInteger(d.index) && d.index >= 0 && d.index < ADVENTURE_QUESTIONS &&
+        d.questions.every(q => q && q.type === ADVENTURE_STAGES[d.stage].id)) {
+      fresh.draft = d;
+    }
+  } catch (error) {
+    // Sérült vagy tiltott böngészőtárhely esetén is játszható marad.
+  }
+  return fresh;
+}
+function writeAdventureData() {
+  if (!state.adventureData) return;
+  try { window.localStorage.setItem(ADVENTURE_SAVE_KEY + state.level, JSON.stringify(state.adventureData)); }
+  catch (error) { /* Helyi tárhely nélkül az aktuális kör működik tovább. */ }
+}
+function saveAdventureDraft() {
+  if (state.playKind !== 'adventure' || state.view !== 'game' || !state.adventureData) return;
+  state.adventureData.draft = {
+    stage: state.adventureStage,
+    questions: state.questions,
+    index: state.index, stars: state.stars,
+    mistakes: state.mistakes, locked: state.locked,
+    selected: state.selected, inputs: state.inputs,
+    feedback: state.feedback, lastChoice: state.lastChoice, chosenTick: state.chosenTick
+  };
+  writeAdventureData();
+}
+function openAdventureMap() {
+  state.adventureData = readAdventureData();
+  state.view = 'map';
+  render();
+}
+function isAdventureUnlocked(stage) {
+  return stage === 0 || state.adventureData.completed[stage - 1];
+}
+function startAdventureStage(stage) {
+  if (!Number.isInteger(stage) || stage < 0 || stage >= ADVENTURE_STAGES.length) return;
+  state.adventureData = state.adventureData || readAdventureData();
+  if (!isAdventureUnlocked(stage)) return;
+  state.playKind = 'adventure';
+  state.adventureStage = stage;
+  state.mode = ADVENTURE_STAGES[stage].id;
+  const draft = state.adventureData.draft;
+  if (draft && draft.stage === stage) {
+    state.questions = draft.questions;
+    state.index = draft.index;
+    state.stars = Math.max(0, Math.min(ADVENTURE_QUESTIONS, Number(draft.stars) || 0));
+    state.mistakes = Boolean(draft.mistakes);
+    state.locked = Boolean(draft.locked);
+    state.selected = Array.isArray(draft.selected) ? draft.selected : [];
+    state.inputs = draft.inputs || {};
+    state.feedback = draft.feedback || null;
+    state.lastChoice = draft.lastChoice ?? null;
+    state.chosenTick = draft.chosenTick ?? null;
+  } else {
+    state.questions = Array.from({ length: ADVENTURE_QUESTIONS }, () => makeQuestion(state.mode, state.level));
+    state.index = 0;
+    state.stars = 0;
+    resetQuestionState();
+  }
+  state.view = 'game';
+  saveAdventureDraft();
+  render();
+}
+function completeAdventureStage() {
+  const progress = state.adventureData;
+  const stage = state.adventureStage;
+  progress.completed[stage] = true;
+  progress.best[stage] = Math.max(progress.best[stage], state.stars);
+  progress.draft = null;
+  writeAdventureData();
+  state.view = 'adventure-result';
+}
+function renderAdventureMap() {
+  state.adventureData = readAdventureData();
+  const progress = state.adventureData;
+  const done = progress.completed.filter(Boolean).length;
+  const totalStars = progress.best.reduce((sum, n) => sum + n, 0);
+  const draft = progress.draft;
+  app.innerHTML = `<section class="adventure-hero">
+    <button class="text-button adventure-back" type="button" data-action="home">← Vissza a főmenübe</button>
+    <p class="eyebrow">🗺️ KALAND MÓD</p>
+    <h1>Számország <span>hét kapuja</span></h1>
+    <p>Haladj végig a hét állomáson! Minden kapu mögött 5 matematikai feladat vár. Ha végigérsz, kinyílik a következő kapu.</p>
+    <div class="adventure-hero-stats"><span>🔓 ${done} / 7 kapu teljesítve</span><span>⭐ ${totalStars} / 35 legjobb csillag</span></div>
+  </section>
+  <section class="adventure-map-body">
+    <div class="adventure-map-toolbar"><div>
+      <h2>Válassz nehézséget!</h2>
+      <p>Mindegyik nehézségi szintnek saját mentése van.</p>
+    </div><div class="level-buttons adventure-level-buttons" role="group" aria-label="Kaland nehézsége">
+      ${LEVELS.map((lev, i) => `<button type="button" class="level-button ${i === state.level ? 'selected' : ''}" data-action="map-level" data-level="${i}" aria-pressed="${i === state.level}">${lev.emoji} ${lev.name}</button>`).join('')}
+    </div></div>
+    <div class="adventure-overall-progress" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="${done}" aria-label="Teljesített kapuk"><div style="width:${done / 7 * 100}%"></div></div>
+    ${draft ? `<div class="adventure-resume"><div><strong>📌 Folytathatod a korábbi küldetésedet!</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index + 1}. feladat / 5</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatás →</button></div>` : ''}
+    <div class="adventure-trail" aria-label="Kalandtérkép: hét állomás">
+      ${ADVENTURE_STAGES.map((mode, i) => {
+        const unlocked = isAdventureUnlocked(i);
+        const completed = progress.completed[i];
+        const resumable = draft && draft.stage === i;
+        return `<div class="adventure-stop ${completed ? 'completed' : ''} ${unlocked ? '' : 'is-locked'}">
+          <button class="adventure-stage-card" type="button" data-action="stage" data-stage="${i}" ${unlocked ? '' : 'disabled'} aria-label="${i + 1}. kapu: ${mode.name}, ${completed ? 'teljesítve' : unlocked ? 'elérhető' : 'lezárva'}">
+            <span class="stage-index">${String(i + 1).padStart(2, '0')}. KAPU ${completed ? '· TELJESÍTVE' : ''}</span>
+            <span class="stage-emoji" aria-hidden="true">${unlocked ? mode.emoji : '🔒'}</span>
+            <span class="stage-name">${mode.name}</span>
+            <span class="stage-desc">${mode.desc}</span>
+            <span class="stage-bottom">${completed ? `⭐ ${progress.best[i]} / 5 · Újrajátszható` : resumable ? '▶ Folytatás' : unlocked ? '▶ Indulhat a küldetés' : '🔒 Az előző kapu után nyílik meg'}</span>
+          </button>
+        </div>`;
+      }).join('')}
+    </div>
+    ${done === 7 ? `<div class="adventure-treasure">🏆 <strong>Gratulálok! Számország mind a hét kapuját kinyitottad!</strong><p>A pályákat bármikor újrajátszhatod, hogy még több csillagot szerezz.</p></div>` : ''}
+    <p class="adventure-save-note">💾 A kapuk és a félbehagyott küldetés automatikusan mentődnek <strong>ebben a böngészőben, ezen az eszközön</strong>. A különböző eszközök között nem szinkronizálódnak.</p>
+  </section>`;
+}
+function renderAdventureResult() {
+  const stage = state.adventureStage;
+  const mode = ADVENTURE_STAGES[stage];
+  const last = stage === ADVENTURE_STAGES.length - 1;
+  app.innerHTML = `<section class="result-screen adventure-result">
+    <div class="result-emoji" aria-hidden="true">${last ? '🏆' : '🔑'}</div>
+    <p class="eyebrow">🎉 ${stage + 1}. KAPU KINYITVA!</p>
+    <h1>${last ? 'Megmentetted Számországot!' : 'Kinyitottad a következő kaput!'}</h1>
+    <p>${mode.name}: mind az 5 feladatot megoldottad. ${last ? 'Mind a hét állomáson végigértél!' : 'Most már egy újabb állomás is elérhető a térképen.'}</p>
+    <div class="score-large" aria-label="${state.stars} az 5 csillagból">⭐ ${state.stars}<span> / 5</span></div>
+    <div class="best-score">🏅 Ezen a kapun a legjobb eredményed: ${state.adventureData.best[stage]} / 5</div>
+    <div class="result-buttons">
+       ${last ? '' : `<button type="button" class="primary-button" data-action="next-stage">Következő kapu →</button>`}
+       <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button>
+    </div>
+    <p class="info-bar">A csillag elsőre helyes megoldásért jár. Ha hibáztál, attól a küldetést még teljesítetted. Újrajátszással javíthatod a csillagjaid számát.</p>
+  </section>`;
 }
 function renderChoices(q) {
   return `<div class="choices" role="group" aria-label="Válaszlehetőségek">
@@ -305,7 +466,8 @@ function renderGame() {
   const q = state.questions[state.index];
   const progress = Math.round((state.index / state.questions.length) * 100);
   app.innerHTML = `<div class="game-wrap">
-    <div class="game-topline"><button type="button" class="text-button" data-action="home">← Vissza a főmenübe</button><span class="stars">⭐ ${state.stars} csillag</span></div>
+    <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure' ? 'map' : 'home'}">← ${state.playKind === 'adventure' ? 'Vissza a térképhez' : 'Vissza a főmenübe'}</button><span class="stars">⭐ ${state.stars} csillag</span></div>
+    ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🗺️ Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>` : ''}
     <div class="game-meta"><span>${MODES.find(m => m.id === state.mode).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. feladat</span></div>
     <div class="progress-track" role="progressbar" aria-valuenow="${state.index}" aria-valuemin="0" aria-valuemax="${state.questions.length}" aria-label="A játék előrehaladása"><div class="progress-fill" style="width: ${progress}%"></div></div>
     <section class="question-box" aria-label="Aktuális feladat">
@@ -317,7 +479,7 @@ function renderGame() {
     <div id="answer-feedback" aria-live="polite" aria-atomic="true">
       ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? '🌟 Ügyes vagy, jó megoldás!' : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}</div>` : ''}
     </div>
-    ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${state.index === state.questions.length - 1 ? 'Eredmény megtekintése 🏆' : 'Következő feladat →'}</button></div>` : ''}
+    ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${state.index === state.questions.length - 1 ? (state.playKind === 'adventure' ? 'Kapu kinyitása 🔑' : 'Eredmény megtekintése 🏆') : 'Következő feladat →'}</button></div>` : ''}
   </div>`;
 }
 function storeBestScore() {
@@ -352,6 +514,8 @@ function render() {
   if (state.view === 'home') renderHome();
   if (state.view === 'game') renderGame();
   if (state.view === 'result') renderResult();
+  if (state.view === 'map') renderAdventureMap();
+  if (state.view === 'adventure-result') renderAdventureResult();
 }
 function tryAnswer(correct, userFriendlyError) {
   const q = state.questions[state.index];
@@ -365,6 +529,7 @@ function tryAnswer(correct, userFriendlyError) {
     state.feedback = { type: 'error', text: userFriendlyError || q.tip };
   }
   render();
+  saveAdventureDraft();
 }
 function checkInteger(text) { return /^[0-9]{1,4}$/.test(String(text).trim()); }
 function handleSubmit(form) {
@@ -391,6 +556,14 @@ app.addEventListener('click', event => {
   const button = event.target.closest('button[data-action]');
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
+  if (action === 'map') { openAdventureMap(); return; }
+  if (action === 'map-level') {
+    state.level = Number(button.dataset.level);
+    openAdventureMap();
+    return;
+  }
+  if (action === 'stage') { startAdventureStage(Number(button.dataset.stage)); return; }
+  if (action === 'next-stage') { startAdventureStage(state.adventureStage + 1); return; }
   if (action === 'set-mode') { state.mode = button.dataset.mode; render(); return; }
   if (action === 'set-level') { state.level = Number(button.dataset.level); render(); return; }
   if (action === 'start' || action === 'restart') { beginGame(); return; }
@@ -398,8 +571,12 @@ app.addEventListener('click', event => {
   if (action === 'next') {
     if (!state.locked) return;
     state.index += 1;
-    if (state.index >= state.questions.length) { storeBestScore(); state.view = 'result'; }
+    if (state.index >= state.questions.length) {
+      if (state.playKind === 'adventure') completeAdventureStage();
+      else { storeBestScore(); state.view = 'result'; }
+    }
     else resetQuestionState();
+    if (state.view === 'game') saveAdventureDraft();
     render();
     app.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
@@ -417,10 +594,11 @@ app.addEventListener('click', event => {
     if (!state.selected.includes(i) && i >= 0 && i < q.numbers.length) state.selected.push(i);
     state.feedback = null;
     render();
+    saveAdventureDraft();
   } else if (action === 'order-undo') {
-    state.selected.pop(); state.feedback = null; render();
+    state.selected.pop(); state.feedback = null; render(); saveAdventureDraft();
   } else if (action === 'order-clear') {
-    state.selected = []; state.feedback = null; render();
+    state.selected = []; state.feedback = null; render(); saveAdventureDraft();
   } else if (action === 'order-check') {
     if (state.selected.length !== q.numbers.length) return;
     const submitted = state.selected.map(i => q.numbers[i]);
