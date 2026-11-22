@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 – nincs szükség külső könyvtárra vagy szerverre.
+// Számmester 1000 V3 – társasjáték-stílusú kalandtábla, szerver nélkül.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
 // 3. A gombokra kattintást az eseménykezelők dolgozzák fel.
@@ -23,6 +23,23 @@ const LEVELS = [
 const QUESTIONS_PER_GAME = 10;
 const ADVENTURE_QUESTIONS = 5;
 const ADVENTURE_STAGES = MODES.filter(mode => mode.id !== 'mixed');
+const HEROES = [
+  { id: 'fox', emoji: '🦊', name: 'Róka' },
+  { id: 'cat', emoji: '🐱', name: 'Cica' },
+  { id: 'dragon', emoji: '🐲', name: 'Sárkány' }
+];
+const BOARD_REGIONS = [
+  { name:'Számok rétje', color:'mint' },
+  { name:'A helyi értékek falva', color:'sky' },
+  { name:'Számjegyek ligete', color:'lilac' },
+  { name:'Értékek hegye', color:'gold' },
+  { name:'Szomszédok tava', color:'blue' },
+  { name:'Beváltás-barlang', color:'peach' },
+  { name:'A számegyenes csúcsa', color:'rose' }
+];
+// A V2-es mentési kulcsot változatlanul hagyjuk, így a korábbi eredmények megmaradnak.
+const HERO_SAVE_KEY = 'szammester1000_board_hero_v3';
+
 // A 3 nehézségi szint kalandmentései egymástól függetlenek.
 const ADVENTURE_SAVE_KEY = 'szammester1000_adventure_v1_';
 const PLACE_NAMES = ['egyesek', 'tízesek', 'százasok', 'ezresek'];
@@ -33,7 +50,7 @@ const state = {
   questions: [], index: 0, stars: 0,
   mistakes: false, locked: false, selected: [], inputs: {},
   feedback: null, lastChoice: null, chosenTick: null, best: 0,
-  playKind: 'practice', adventureStage: 0, adventureData: null
+  playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox'
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -212,9 +229,9 @@ function renderHome() {
     <section class="adventure-feature" aria-label="Új kalandmód">
       <div class="adventure-feature-icon" aria-hidden="true">🗺️</div>
       <div class="adventure-feature-text">
-        <span class="adventure-kicker">ÚJ • TÉRKÉPES KALAND</span>
-        <h2>Számország hét kapuja</h2>
-        <p>Oldd meg a küldetéseket, gyűjts csillagokat és nyisd ki a következő kaput! A haladásodat a böngésző megjegyzi.</p>
+        <span class="adventure-kicker">ÚJ • JÁTSZHATÓ TÁRSASJÁTÉKTÁBLA</span>
+        <h2>Számország varázsösvénye</h2>
+        <p>35 mező, 7 állomás, választott bábu és csillagok! Minden jó megoldás egy lépés a cél felé. A korábbi eredményeidet is megtartjuk.</p>
       </div>
       <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
     </section>
@@ -349,46 +366,106 @@ function completeAdventureStage() {
   writeAdventureData();
   state.view = 'adventure-result';
 }
+// A pálya 35 mezős: hét tematikus szakasz, szakaszonként öt mező.
+// Páros sorok balról jobbra, páratlan sorok jobbról balra haladnak.
+function boardCoord(tileIndex) {
+  const row = Math.floor(tileIndex / ADVENTURE_QUESTIONS);
+  const spot = tileIndex % ADVENTURE_QUESTIONS;
+  const column = row % 2 === 0 ? spot : 4 - spot;
+  return { x: 180 + column * 185, y: 178 + row * 147 };
+}
+function boardRoadPath() {
+  let path = 'M 82 178 L 180 178';
+  for (let row=0; row<7; row++) {
+    const y=178+row*147;
+    const endX = row%2===0 ? 920 : 180;
+    path += ` L ${endX} ${y}`;
+    if (row < 6) {
+      const edge = row%2===0 ? 1012 : 88;
+      const ny=y+147;
+      path += ` Q ${edge} ${y} ${edge} ${y+73.5} Q ${edge} ${ny} ${endX} ${ny}`;
+    }
+  }
+  return path;
+}
+function boardPosition(progress) {
+  const draft=progress.draft;
+  if (draft) return Math.max(0, Math.min(35, draft.stage*5 + draft.index + (draft.locked ? 1 : 0)));
+  let count=0;
+  while (count<7 && progress.completed[count]) count++;
+  return count*5;
+}
+function renderBoard(progress) {
+  const position=boardPosition(progress);
+  const pawn = position === 0 ? { x: 84, y: 178 } : boardCoord(position-1);
+  const regionLabels = BOARD_REGIONS.map((r,i) => {
+    const isRight=i%2===1;
+    return `<div class="board-region region-${r.color} ${isRight?'region-right':''}" style="left:${isRight?74:26}%;top:${(105+i*147)/1225*100}%"><span>${ADVENTURE_STAGES[i].emoji} ${r.name}</span></div>`;
+  }).join('');
+  const tiles = Array.from({length:35},(_,tileIndex)=>{
+    const stage=Math.floor(tileIndex/5);
+    const loc=boardCoord(tileIndex);
+    const stageProgress=progress.completed[stage] ? 5 : progress.draft?.stage===stage ? progress.draft.index+(progress.draft.locked?1:0) : 0;
+    const completed=stageProgress>=tileIndex%5+1;
+    const unlocked=stage===0 || progress.completed[stage-1];
+    const gate=tileIndex%5===4;
+    return `<button type="button" class="board-tile ${completed?'tile-done':''} ${unlocked?'tile-unlocked':'tile-locked'} ${gate?'tile-gate':''} ${position===tileIndex+1?'tile-current':''}" style="left:${loc.x/1100*100}%;top:${loc.y/1225*100}%" data-action="stage" data-stage="${stage}" ${unlocked?'':'disabled'} aria-label="${tileIndex+1}. mező, ${ADVENTURE_STAGES[stage].name}${unlocked?', megnyitható':', lezárva'}" title="${ADVENTURE_STAGES[stage].name}"><span class="board-tile-number">${gate?'✦':tileIndex+1}</span></button>`;
+  }).join('');
+  const road=boardRoadPath();
+  const hero=HEROES.find(h=>h.id===state.hero) || HEROES[0];
+  return `<div class="board-scroll" role="region" tabindex="0" aria-label="35 mezős matematikai társasjátéktábla; kisebb kijelzőn oldalra görgethető">
+  <div class="board-world">
+    <svg class="board-landscape" viewBox="0 0 1100 1225" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="boardGreen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e1f6cf"/><stop offset=".53" stop-color="#fff3d5"/><stop offset="1" stop-color="#e1edf9"/></linearGradient><linearGradient id="boardRoad" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffedbb"/><stop offset="1" stop-color="#fffaf0"/></linearGradient></defs>
+      <rect width="1100" height="1225" rx="32" fill="url(#boardGreen)"/>
+      <path d="M0 300 Q200 212 390 316 T790 283 T1100 300 V445 Q850 363 710 414 T280 400 T0 448Z" fill="#b9deba" opacity=".42"/>
+      <path d="M0 780 Q250 710 480 820 T1100 760 V1015 Q820 975 550 990 T0 990Z" fill="#c4d9e9" opacity=".48"/>
+      <path d="M0 1080 Q180 1005 385 1090 T790 1085 T1100 1060 V1225H0Z" fill="#f4d8b5" opacity=".55"/>
+      <path d="M-35 626 Q240 548 458 658 T1138 622" fill="none" stroke="#a9d8e1" stroke-width="44" opacity=".56"/>
+      <path d="M-35 626 Q240 548 458 658 T1138 622" fill="none" stroke="#d5f6f9" stroke-width="26" opacity=".73"/>
+      <g opacity=".55" fill="#f5fcf9"><ellipse cx="240" cy="86" rx="65" ry="21"/><ellipse cx="278" cy="75" rx="47" ry="27"/><ellipse cx="768" cy="438" rx="57" ry="17"/><ellipse cx="791" cy="422" rx="35" ry="25"/><ellipse cx="320" cy="861" rx="65" ry="19"/></g>
+      <g fill="#91c5a9" opacity=".58"><path d="M56 440l25-52 25 52H93l21 39H47l21-39Z"/><path d="M1045 765l28-53 28 53h-17l23 45h-70l20-45Z"/><path d="M64 905l22-44 22 44H96l14 30H63l16-30Z"/><path d="M1021 280l20-44 20 44h-12l16 31h-48l13-31Z"/></g>
+      <path d="${road}" fill="none" stroke="#c5a777" stroke-width="90" stroke-linecap="round" stroke-linejoin="round" opacity=".28"/>
+      <path d="${road}" fill="none" stroke="url(#boardRoad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="${road}" fill="none" stroke="#e3c98f" stroke-width="4" stroke-dasharray="5 18" stroke-linecap="round"/>
+    </svg>
+    <div class="board-deco deco-castle" aria-hidden="true">🏰</div><div class="board-deco deco-forest" aria-hidden="true">🌲🌳</div><div class="board-deco deco-lake" aria-hidden="true">🪷</div><div class="board-deco deco-star" aria-hidden="true">✨</div>
+    ${regionLabels}
+    <div class="board-start-flag">START</div><div class="board-finish-flag">CÉL 🏆</div>
+    ${tiles}
+    <div class="board-pawn" style="left:${pawn.x/1100*100}%;top:${pawn.y/1225*100}%" role="img" aria-label="A bábu a ${position}. mezőnél jár"><span>${hero.emoji}</span></div>
+  </div></div>`;
+}
 function renderAdventureMap() {
   state.adventureData = readAdventureData();
   const progress = state.adventureData;
   const done = progress.completed.filter(Boolean).length;
   const totalStars = progress.best.reduce((sum, n) => sum + n, 0);
   const draft = progress.draft;
-  app.innerHTML = `<section class="adventure-hero">
+  const position=boardPosition(progress);
+  app.innerHTML = `<section class="adventure-hero board-hero">
     <button class="text-button adventure-back" type="button" data-action="home">← Vissza a főmenübe</button>
-    <p class="eyebrow">🗺️ KALAND MÓD</p>
-    <h1>Számország <span>hét kapuja</span></h1>
-    <p>Haladj végig a hét állomáson! Minden kapu mögött 5 matematikai feladat vár. Ha végigérsz, kinyílik a következő kapu.</p>
-    <div class="adventure-hero-stats"><span>🔓 ${done} / 7 kapu teljesítve</span><span>⭐ ${totalStars} / 35 legjobb csillag</span></div>
+    <p class="eyebrow">🎲 MATEMATIKAI TÁRSASJÁTÉK • 3. VERZIÓ</p>
+    <h1>Számország <span>varázsösvénye</span></h1>
+    <p>Válassz bábut, majd haladj végig a 35 mezős kalandpályán! <strong>Minden megoldott feladat egy mezővel visz előrébb.</strong> Itt a tudás számít, nem a szerencse.</p>
+    <div class="adventure-hero-stats"><span>🎲 ${position} / 35 mező</span><span>🔓 ${done} / 7 kapu</span><span>⭐ ${totalStars} / 35 csillag</span></div>
   </section>
-  <section class="adventure-map-body">
-    <div class="adventure-map-toolbar"><div>
-      <h2>Válassz nehézséget!</h2>
-      <p>Mindegyik nehézségi szintnek saját mentése van.</p>
-    </div><div class="level-buttons adventure-level-buttons" role="group" aria-label="Kaland nehézsége">
-      ${LEVELS.map((lev, i) => `<button type="button" class="level-button ${i === state.level ? 'selected' : ''}" data-action="map-level" data-level="${i}" aria-pressed="${i === state.level}">${lev.emoji} ${lev.name}</button>`).join('')}
-    </div></div>
-    <div class="adventure-overall-progress" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="${done}" aria-label="Teljesített kapuk"><div style="width:${done / 7 * 100}%"></div></div>
-    ${draft ? `<div class="adventure-resume"><div><strong>📌 Folytathatod a korábbi küldetésedet!</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index + 1}. feladat / 5</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatás →</button></div>` : ''}
-    <div class="adventure-trail" aria-label="Kalandtérkép: hét állomás">
-      ${ADVENTURE_STAGES.map((mode, i) => {
-        const unlocked = isAdventureUnlocked(i);
-        const completed = progress.completed[i];
-        const resumable = draft && draft.stage === i;
-        return `<div class="adventure-stop ${completed ? 'completed' : ''} ${unlocked ? '' : 'is-locked'}">
-          <button class="adventure-stage-card" type="button" data-action="stage" data-stage="${i}" ${unlocked ? '' : 'disabled'} aria-label="${i + 1}. kapu: ${mode.name}, ${completed ? 'teljesítve' : unlocked ? 'elérhető' : 'lezárva'}">
-            <span class="stage-index">${String(i + 1).padStart(2, '0')}. KAPU ${completed ? '· TELJESÍTVE' : ''}</span>
-            <span class="stage-emoji" aria-hidden="true">${unlocked ? mode.emoji : '🔒'}</span>
-            <span class="stage-name">${mode.name}</span>
-            <span class="stage-desc">${mode.desc}</span>
-            <span class="stage-bottom">${completed ? `⭐ ${progress.best[i]} / 5 · Újrajátszható` : resumable ? '▶ Folytatás' : unlocked ? '▶ Indulhat a küldetés' : '🔒 Az előző kapu után nyílik meg'}</span>
-          </button>
-        </div>`;
-      }).join('')}
+  <section class="adventure-map-body board-body">
+    <div class="board-toolbar">
+      <div><h2>Válassz nehézséget!</h2><p>Mindegyik szintnek saját mentése van.</p></div>
+      <div class="level-buttons adventure-level-buttons" role="group" aria-label="Kaland nehézsége">${LEVELS.map((lev,i)=>`<button type="button" class="level-button ${state.level===i?'selected':''}" data-action="map-level" data-level="${i}" aria-pressed="${i===state.level}">${lev.emoji} ${lev.name}</button>`).join('')}</div>
     </div>
-    ${done === 7 ? `<div class="adventure-treasure">🏆 <strong>Gratulálok! Számország mind a hét kapuját kinyitottad!</strong><p>A pályákat bármikor újrajátszhatod, hogy még több csillagot szerezz.</p></div>` : ''}
-    <p class="adventure-save-note">💾 A kapuk és a félbehagyott küldetés automatikusan mentődnek <strong>ebben a böngészőben, ezen az eszközön</strong>. A különböző eszközök között nem szinkronizálódnak.</p>
+    <div class="hero-picker"><strong>🧍 Válaszd ki a bábudat!</strong><div class="hero-options" role="group" aria-label="Játékbábu kiválasztása">${HEROES.map(hero=>`<button type="button" class="hero-option ${state.hero===hero.id?'active':''}" data-action="hero" data-hero="${hero.id}" aria-pressed="${state.hero===hero.id}"><span aria-hidden="true">${hero.emoji}</span>${hero.name}</button>`).join('')}</div></div>
+    ${draft ? `<div class="adventure-resume"><div><strong>📌 Félbehagyott küldetésed van</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index+1}. feladat az 5-ből</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatom →</button></div>` : ''}
+    <div class="board-frame"><div class="board-heading"><span>🗺️ KALANDTÁBLA</span><span>START → 35 MEZŐ → CÉL</span></div>${renderBoard(progress)}<p class="board-scroll-tip">📱 Telefonon a pályát oldalirányban is görgetheted.</p></div>
+    <div class="board-legend"><span>${(HEROES.find(h=>h.id===state.hero)||HEROES[0]).emoji} Bábu: itt tartasz</span><span>✅ Zöld mező: teljesítve</span><span>🔒 Szürke mező: még zárva</span></div>
+    <div class="board-missions"><h2>🚩 Válassz megnyitott állomást!</h2><p>A következő kapu öt megoldott feladat után nyílik ki. A már teljesített pályákat bármikor újrajátszhatod.</p>
+      <div class="board-mission-grid">${ADVENTURE_STAGES.map((mode,i)=>{
+        const unlocked=isAdventureUnlocked(i), completed=progress.completed[i];
+        return `<button type="button" class="board-mission ${completed?'mission-complete':''}" data-action="stage" data-stage="${i}" ${unlocked?'':'disabled'}><span class="board-mission-emoji">${unlocked?mode.emoji:'🔒'}</span><span><strong>${i+1}. ${mode.name}</strong><small>${completed?`⭐ ${progress.best[i]}/5 · Újrajátszható`:draft?.stage===i?'▶ Folytatás':unlocked?'▶ Kezdés':'Még zárva'}</small></span><span class="board-mission-arrow">${unlocked?'→':'·'}</span></button>`;
+      }).join('')}</div></div>
+    ${done===7?'<div class="adventure-treasure">🏆 <strong>Gratulálok! Számország minden kapuját kinyitottad!</strong><p>A megszerzett csillagokat a táblán újrajátszással is gyarapíthatod.</p></div>':''}
+    <p class="adventure-save-note">💾 A haladás és a bábu választása ezen az eszközön, ebben a böngészőben mentődik. Nem szinkronizálódik automatikusan más eszközre. A korábbi Kaland mód eredményei megmaradnak.</p>
   </section>`;
 }
 function renderAdventureResult() {
@@ -396,7 +473,7 @@ function renderAdventureResult() {
   const mode = ADVENTURE_STAGES[stage];
   const last = stage === ADVENTURE_STAGES.length - 1;
   app.innerHTML = `<section class="result-screen adventure-result">
-    <div class="result-emoji" aria-hidden="true">${last ? '🏆' : '🔑'}</div>
+    <div class="result-emoji board-victory" aria-hidden="true">${last ? '🏆' : '🔑'}</div>
     <p class="eyebrow">🎉 ${stage + 1}. KAPU KINYITVA!</p>
     <h1>${last ? 'Megmentetted Számországot!' : 'Kinyitottad a következő kaput!'}</h1>
     <p>${mode.name}: mind az 5 feladatot megoldottad. ${last ? 'Mind a hét állomáson végigértél!' : 'Most már egy újabb állomás is elérhető a térképen.'}</p>
@@ -462,12 +539,17 @@ function renderQuestionContents(q) {
     default: return '';
   }
 }
+function renderBoardMini() {
+  const step=state.index+(state.locked?1:0);
+  const hero=HEROES.find(h=>h.id===state.hero) || HEROES[0];
+  return `<div class="mini-board" aria-label="Társasjáték-állás: ${step} az 5 mezőből"><span class="mini-board-label">🎲 Lépj előre a helyes megoldással!</span><div class="mini-track"><span class="mini-start">START</span>${Array.from({length:5},(_,i)=>`<span class="mini-tile ${i<step?'mini-done':''} ${i===step-1?'mini-current':''}">${i===step-1?`<span class="mini-pawn">${hero.emoji}</span>`:i+1}</span>`).join('')}<span class="mini-gate">🔑</span></div></div>`;
+}
 function renderGame() {
   const q = state.questions[state.index];
   const progress = Math.round((state.index / state.questions.length) * 100);
   app.innerHTML = `<div class="game-wrap">
     <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure' ? 'map' : 'home'}">← ${state.playKind === 'adventure' ? 'Vissza a térképhez' : 'Vissza a főmenübe'}</button><span class="stars">⭐ ${state.stars} csillag</span></div>
-    ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🗺️ Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>` : ''}
+    ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🎲 Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>${renderBoardMini()}` : ''}
     <div class="game-meta"><span>${MODES.find(m => m.id === state.mode).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. feladat</span></div>
     <div class="progress-track" role="progressbar" aria-valuenow="${state.index}" aria-valuemin="0" aria-valuemax="${state.questions.length}" aria-label="A játék előrehaladása"><div class="progress-fill" style="width: ${progress}%"></div></div>
     <section class="question-box" aria-label="Aktuális feladat">
@@ -557,6 +639,14 @@ app.addEventListener('click', event => {
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
   if (action === 'map') { openAdventureMap(); return; }
+  if (action === 'hero') {
+    const hero=button.dataset.hero;
+    if (!HEROES.some(h=>h.id===hero)) return;
+    state.hero=hero;
+    try { window.localStorage.setItem(HERO_SAVE_KEY, hero); } catch(error) { /* Tárhely nélkül is működik. */ }
+    render();
+    return;
+  }
   if (action === 'map-level') {
     state.level = Number(button.dataset.level);
     openAdventureMap();
@@ -607,6 +697,10 @@ app.addEventListener('click', event => {
     tryAnswer(correct);
   }
 });
+try {
+  const savedHero=window.localStorage.getItem(HERO_SAVE_KEY);
+  if (HEROES.some(h=>h.id===savedHero)) state.hero=savedHero;
+} catch(error) { /* Tárhely nélkül az alapértelmezett róka bábu marad. */ }
 const brandLink = document.getElementById('brandLink');
 brandLink.addEventListener('click', event => { event.preventDefault(); state.view = 'home'; render(); });
 render();
