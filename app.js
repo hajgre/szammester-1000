@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 V6 – okos gyakorlás, kincsvadászat, jutalmak és főellenfelek.
+// Számmester 1000 V7 – feladatkártyák az alaki és valódi értékhez; V6 funkciók megőrizve.
 // Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
@@ -21,6 +21,10 @@ const LEVELS = [
   { name: 'Haladó', emoji: '⚡', text: 'Változatosabb számok, tízes szomszédok és beváltások.' },
   { name: 'Mester', emoji: '🏆', text: 'Közeli számok, százas szomszédok és összetett beváltások.' }
 ];
+// A kártyapakli külön játékmód, NEM része a 7 kapus kalandnak.
+const DIGIT_CARD_MODE = {id:'digitcards',name:'Számjegykártyák',emoji:'🎴',desc:'Kisebb–nagyobb, alaki–valódi érték.'};
+const DIGIT_CARD_KINDS = ['face-min','face-max','real-min','real-max'];
+const DIGIT_CARDS_PER_GAME = 12;
 const QUESTIONS_PER_GAME = 10;
 const ADVENTURE_QUESTIONS = 5;
 const ADVENTURE_STAGES = MODES.filter(mode => mode.id !== 'mixed');
@@ -46,6 +50,7 @@ const SOUND_SAVE_KEY = 'szammester1000_sound_v5';
 const BOSS_QUESTIONS = 2;
 // V6: önálló hibagyakorlási mentés minden nehézségi szinthez.
 const SMART_SAVE_KEY = 'szammester1000_smart_v6_';
+const SMART_TOPICS = [...ADVENTURE_STAGES, DIGIT_CARD_MODE];
 const SMART_QUEUE_LIMIT = 60;
 const SMART_REVIEWS_TO_MASTER = 2;
 const BOSSES = [
@@ -225,6 +230,59 @@ function makeNumberline(level) {
     explain: `A(z) ${target} a(z) <strong>${targetIndex + 1}. jelölésnél</strong> van, mert ${start} + ${targetIndex} × ${step} = ${target}.`
   };
 }
+// V7 – négyféle kártya 3-3 példányban, véletlen sorrendben.
+// Minden számjegy különböző, így mindig pontosan egy jó válasz van.
+function makeDigitCard(kind, level) {
+  let digits;
+  if (level === 0) digits = shuffle([1,2,3,4,5,6]).slice(0,3);
+  else if (level === 1) digits = shuffle([1,2,3,4,5,6,7,8,9]).slice(0,3);
+  else {
+    // Haladó helyzet: a 0 is megjelenhet a tízesek vagy egyesek között.
+    digits = shuffle([1,2,3,4,5,6,7,8,9]).slice(0,3);
+    if (Math.random()<.55) digits[rand(1,2)]=0;
+  }
+  const number=digits[0]*100+digits[1]*10+digits[2];
+  const realValues=digits.map((digit,i)=>digit*[100,10,1][i]);
+  const measure=kind.startsWith('face')?digits:realValues;
+  const isMin=kind.endsWith('min');
+  const value=isMin?Math.min(...measure):Math.max(...measure);
+  const answerIndex=measure.indexOf(value);
+  const answer=String(digits[answerIndex]);
+  const what=kind.startsWith('face')?'alaki':'valódi';
+  const size=isMin?'legkisebb':'legnagyobb';
+  const explanation=what==='alaki'
+    ? `A számjegyek alaki értéke: <strong>${digits.join(', ')}</strong>. A ${size} a <strong>${answer}</strong>.`
+    : `Valódi értékek: <strong>${digits[0]} → ${realValues[0]}</strong>, <strong>${digits[1]} → ${realValues[1]}</strong>, <strong>${digits[2]} → ${realValues[2]}</strong>. A ${size} érték <strong>${value}</strong>, ezért a helyes számjegy: <strong>${answer}</strong>.`;
+  return {
+    type:'digitcards', cardKind:kind, number, label:'🎴 Számjegykártya',
+    title:`Melyik számjegynek a ${size} ${what==='alaki'?'az alaki':'a valódi'} értéke?`,
+    hint:'Kattints a 3 számjegy közül a megfelelőre!', answer,
+    options:shuffle(digits.map(String)), highlight:-1,
+    explain:explanation,
+    tip:what==='alaki'?'Alaki érték: magát a számjegyet hasonlítsd össze!':
+      'Valódi érték: százas × 100, tízes × 10, egyes × 1. Figyelj a nullára is!'
+  };
+}
+function makeDigitCardDeck(level) {
+  const kinds=[];
+  for(let round=0;round<3;round++) {
+    const group=shuffle(DIGIT_CARD_KINDS);
+    // Ne ismétlődjön közvetlenül ugyanaz a kérdéstípus a két kör határán.
+    if(kinds.length && group[0]===kinds[kinds.length-1]) [group[0],group[1]]=[group[1],group[0]];
+    kinds.push(...group);
+  }
+  return kinds.map(kind=>makeDigitCard(kind,level));
+}
+function insertSavedDigitCards(questions) {
+  const entries=smartRead().queue.filter(e=>e.q.type==='digitcards'&&DIGIT_CARD_KINDS.includes(e.q.cardKind))
+    .sort((a,b)=>a.successes-b.successes||a.last-b.last).slice(0,2);
+  const used=new Set();
+  entries.forEach(entry=>{
+    const index=questions.findIndex((q,i)=>i>=3 && !used.has(i) && q.cardKind===entry.q.cardKind);
+    if(index>=0){ questions[index]=smartQuestion(entry); used.add(index); }
+  });
+  return questions;
+}
 function makeQuestion(type, level) {
   switch (type) {
     case 'order': return makeOrdering(level);
@@ -260,7 +318,7 @@ function smartQuestionId(question) {
   const q=smartQuestionCore(question);
   // A kanonikus válaszokból készülő stabil azonosító. Nem igényel hálózatot.
   return JSON.stringify([q.type,q.number,q.highlight,q.n,q.start,q.step,q.targetIndex,
-    q.expression,q.numbers,q.answer,q.title]);
+    q.expression,q.numbers,q.answer,q.title,q.cardKind]);
 }
 function smartRead() {
   const d=smartFresh();
@@ -270,7 +328,7 @@ function smartRead() {
     d.mastered=Number.isSafeInteger(saved.mastered)?Math.max(0,saved.mastered):0;
     d.wrongTotal=Number.isSafeInteger(saved.wrongTotal)?Math.max(0,saved.wrongTotal):0;
     d.queue=saved.queue.filter(entry=>entry && typeof entry==='object' &&
-      entry.q && typeof entry.q==='object' && ADVENTURE_STAGES.some(m=>m.id===entry.q.type) &&
+      entry.q && typeof entry.q==='object' && SMART_TOPICS.some(m=>m.id===entry.q.type) &&
       typeof entry.q.title==='string' && typeof entry.q.explain==='string' &&
       entry.q.title.length<400 && entry.q.explain.length<800 &&
       typeof entry.id==='string' && entry.id===smartQuestionId(entry.q))
@@ -312,9 +370,10 @@ function smartRememberMistake(q) {
   smartWrite(d);
   // A sima gyakorlásban egy hibás feladat 3 későbbi kérdéssel ismét megjelenhet.
   // A kaland és a főellenfél rögzített 5/2 feladatos menetéhez nem nyúlunk.
-  if (state.playKind==='practice' && !q.__smartId && state.autoSmartScheduled<2) {
+  if ((state.playKind==='practice'||state.playKind==='cards') && !q.__smartId && state.autoSmartScheduled<2) {
     for (let k=state.index+3;k<state.questions.length;k++) {
-      if (!state.questions[k].__smartId) {
+      if (!state.questions[k].__smartId &&
+          (state.playKind!=='cards'||state.questions[k].cardKind===q.cardKind)) {
         state.questions[k]=smartQuestion(entry);
         state.autoSmartScheduled+=1;
         break;
@@ -358,7 +417,7 @@ function renderSmartHub() {
     <h2>Melyik témakört gyakoroljuk?</h2>
     <div class="smart-topic-grid">
       <button type="button" class="smart-topic ${state.reviewTopic==='all'?'chosen':''}" data-action="review-topic" data-topic="all" aria-pressed="${state.reviewTopic==='all'}"><span>🌈</span><strong>Mindegyik témakör</strong><small>${all} feladat</small></button>
-      ${ADVENTURE_STAGES.map(mode=>`<button type="button" class="smart-topic ${state.reviewTopic===mode.id?'chosen':''}" data-action="review-topic" data-topic="${mode.id}" aria-pressed="${state.reviewTopic===mode.id}"><span>${mode.emoji}</span><strong>${mode.name}</strong><small>${smartPendingCount(mode.id)} feladat</small></button>`).join('')}
+      ${SMART_TOPICS.map(mode=>`<button type="button" class="smart-topic ${state.reviewTopic===mode.id?'chosen':''}" data-action="review-topic" data-topic="${mode.id}" aria-pressed="${state.reviewTopic===mode.id}"><span>${mode.emoji}</span><strong>${mode.name}</strong><small>${smartPendingCount(mode.id)} feladat</small></button>`).join('')}
     </div>
     <div class="smart-launch">
       <div><strong>${count?`${count} feladat vár a kiválasztott témában`:'Minden feladatod rendben van! 🎉'}</strong>
@@ -410,6 +469,13 @@ function renderHome() {
       </div>
       <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
     </section>
+    <section class="digitcard-feature" aria-label="Számjegykártyák">
+      <div class="digitcard-feature-art" aria-hidden="true"><span>9</span><span>3</span><span>6</span></div>
+      <div><span class="digitcard-kicker">ÚJDONSÁG • V7 🎴</span><h2>Számjegykártya-kihívás</h2>
+        <p>12 kártya · Legkisebb és legnagyobb <strong>alaki</strong> vagy <strong>valódi</strong> érték. A kérdések váltakoznak, a számok mindig újak!</p>
+        <p class="digitcard-example">Például: <strong>936</strong> – melyik számjegy valódi értéke a legkisebb?</p></div>
+      <button class="digitcard-enter" type="button" data-action="cards">Kártyák indítása →</button>
+    </section>
     <section class="smart-feature" aria-label="Okos gyakorlás">
       <div class="smart-feature-mark" aria-hidden="true">🧠</div>
       <div><span class="smart-small-heading">ÚJDONSÁG • V6</span><h2>Hibáimból tanulok</h2>
@@ -441,6 +507,14 @@ function renderHome() {
     </section>`;
 }
 function beginGame() {
+  // A kártyapakli elkülönül a korábbi nyolc gyakorlómódtól és a hét kaputól.
+  if (state.mode==='digitcards') {
+    state.playKind='cards';
+    state.questions=insertSavedDigitCards(makeDigitCardDeck(state.level));
+    state.view='game';state.index=0;state.stars=0;
+    state.autoSmartScheduled=state.questions.filter(q=>q.__smartId).length;
+    resetQuestionState();render();return;
+  }
   state.playKind = 'practice';
   const types = MODES.filter(m => m.id !== 'mixed').map(m => m.id);
   const sequence = state.mode === 'mixed'
@@ -969,6 +1043,21 @@ function renderNumberline(q) {
     <p class="line-callout">Kattints az egyik függőleges jelölésre! A két végpont között 10 egyenlő szakasz van.</p>
   </div>`;
 }
+function renderDigitCard(q) {
+  const tag=q.cardKind.startsWith('face')?'ALAKI ÉRTÉK':'VALÓDI ÉRTÉK';
+  const group=q.cardKind.endsWith('min')?'🔽 LEGKISEBB':'🔼 LEGNAGYOBB';
+  const digits=numberParts(q.number);
+  return `<div class="digitcard-paper" aria-label="Számjegykártya: ${q.number}">
+    <div class="digitcard-paper-top"><span>✦ SZÁMMESTER PAKLI</span><span>${tag}</span></div>
+    <div class="digitcard-paper-number">${digits.map(d=>`<span>${d}</span>`).join('')}</div>
+    <div class="digitcard-paper-kind">${group}</div>
+    <div class="digitcard-paper-bottom">Válaszd ki a megfelelő <strong>számjegyet!</strong></div>
+  </div>
+  <div class="digitcard-choice-label">Kattints egy válaszkártyára:</div>
+  <div class="digitcard-choices" role="group" aria-label="Válaszkártyák">
+    ${q.options.map(v=>`<button type="button" class="digitcard-choice ${state.locked && String(v)===String(q.answer)?'digitcard-correct':''}" data-action="choose" data-value="${v}" ${state.locked?'disabled':''}>${v}</button>`).join('')}
+  </div>`;
+}
 function renderQuestionContents(q) {
   switch (q.type) {
     case 'order': return renderOrder(q);
@@ -977,6 +1066,7 @@ function renderQuestionContents(q) {
     case 'neighbors': return renderNeighbors(q);
     case 'exchange': return renderExchange(q);
     case 'line': return renderNumberline(q);
+    case 'digitcards': return renderDigitCard(q);
     default: return '';
   }
 }
@@ -993,7 +1083,7 @@ function renderGame() {
   app.innerHTML = `<div class="game-wrap ${bossMode?'game-boss':''}">
     <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure'||bossMode ? 'map' : reviewing ? 'review-home' : 'home'}">← ${state.playKind === 'adventure'||bossMode ? 'Vissza a térképhez' : reviewing ? 'Vissza a gyakorlóműhelybe' : 'Vissza a főmenübe'}</button><span class="stars">${bossMode?'⚔️ Főellenfél harc':reviewing?'🧠 Ismétlő kör':`⭐ ${state.stars} csillag`}</span>${soundButton()}</div>
     ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🎲 Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>${renderBoardMini()}` : bossMode?renderBossArena():''}
-    <div class="game-meta"><span>${MODES.find(m => m.id === state.mode).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. ${bossMode?'főellenfél-feladat':'feladat'}</span></div>
+    <div class="game-meta"><span>${(MODES.find(m => m.id === state.mode)||DIGIT_CARD_MODE).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. ${bossMode?'főellenfél-feladat':'feladat'}</span></div>
     <div class="progress-track" role="progressbar" aria-valuenow="${state.index}" aria-valuemin="0" aria-valuemax="${state.questions.length}" aria-label="A játék előrehaladása"><div class="progress-fill" style="width: ${progress}%"></div></div>
     <section class="question-box" aria-label="Aktuális feladat">
       <span class="question-tag">${q.label}</span>
@@ -1023,15 +1113,17 @@ function storeBestScore() {
 function renderResult() {
   let title = 'Szép munka!';
   let message = 'Minden feladatot megoldottál. A gyakorlással egyre ügyesebb leszel!';
-  if (state.stars === QUESTIONS_PER_GAME) { title = 'Tökéletes küldetés!'; message = 'Minden kérdést elsőre jól oldottál meg. Ez igazán remek teljesítmény!'; }
+  const total=state.questions.length;
+  if (state.playKind==='cards') { title='🎴 Pakli teljesítve!'; message='Mind a négy kérdéstípust gyakoroltad. A hibás kártyák visszakerülhetnek a Gyakorlóműhelybe.'; }
+  else if (state.stars === total) { title = 'Tökéletes küldetés!'; message = 'Minden kérdést elsőre jól oldottál meg. Ez igazán remek teljesítmény!'; }
   else if (state.stars >= 7) { title = 'Nagyon ügyes voltál!'; message = 'Sok feladat sikerült elsőre. A többit is kitartóan megoldottad!'; }
   app.innerHTML = `<section class="result-screen">
     <div class="result-emoji" aria-hidden="true">🏆</div>
     <p class="eyebrow">KÜLDETÉS TELJESÍTVE</p>
     <h1>${title}</h1>
     <p>${message}</p>
-    <div class="score-large" aria-label="${state.stars} a ${QUESTIONS_PER_GAME} csillagból">⭐ ${state.stars}<span> / ${QUESTIONS_PER_GAME}</span></div>
-    <div class="best-score">🏅 Legjobb eredmény ebben a módban: ${state.best} / ${QUESTIONS_PER_GAME}</div>
+    <div class="score-large" aria-label="${state.stars} a ${total} csillagból">⭐ ${state.stars}<span> / ${total}</span></div>
+    <div class="best-score">🏅 Legjobb eredmény ebben a módban: ${state.best} / ${total}</div>
     <div class="result-buttons"><button type="button" class="primary-button" data-action="restart">🔁 Játssz újra!</button><button type="button" class="secondary-button" data-action="home">Másik küldetést választok</button><button type="button" class="secondary-button" data-action="review-home">🧠 Hibáimból tanulok (${smartPendingCount()})</button></div>
     <p class="info-bar">A csillag akkor jár, ha a feladat első próbálkozásra sikerül. Hibázás után is nyugodtan újrapróbálkozhatsz: a legfontosabb, hogy megértsd a megoldást.</p>
   </section>`;
@@ -1099,9 +1191,10 @@ app.addEventListener('click', event => {
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
   if (action === 'map') { openAdventureMap(); return; }
+  if (action === 'cards') { state.mode='digitcards'; beginGame(); return; }
   if (action==='review-home') { state.view='smart';state.reviewTopic='all';render();return; }
   if (action==='review-level') { const level=Number(button.dataset.level);if(level>=0 && level<LEVELS.length) {state.level=level;render();} return; }
-  if (action==='review-topic') { const topic=button.dataset.topic;if(topic==='all'||ADVENTURE_STAGES.some(m=>m.id===topic)){state.reviewTopic=topic;render();}return; }
+  if (action==='review-topic') { const topic=button.dataset.topic;if(topic==='all'||SMART_TOPICS.some(m=>m.id===topic)){state.reviewTopic=topic;render();}return; }
   if (action==='review-start') { if(state.view==='smart')beginSmartReview();return; }
   if (action==='sound') {
     state.soundEnabled=!state.soundEnabled;
@@ -1143,7 +1236,7 @@ app.addEventListener('click', event => {
   if (action === 'set-mode') { state.mode = button.dataset.mode; render(); return; }
   if (action === 'set-level') { state.level = Number(button.dataset.level); render(); return; }
   if (action === 'start' || action === 'restart') { beginGame(); return; }
-  if (action === 'home') { state.view = 'home'; render(); return; }
+  if (action === 'home') { if (state.mode==='digitcards') state.mode='mixed'; state.view = 'home'; render(); return; }
   if (action === 'next') {
     if (!state.locked) return;
     const rewardTile=pendingRewardTile();
@@ -1193,5 +1286,5 @@ try {
 try { state.soundEnabled=window.localStorage.getItem(SOUND_SAVE_KEY)==='on'; }
 catch(error) { state.soundEnabled=false; }
 const brandLink = document.getElementById('brandLink');
-brandLink.addEventListener('click', event => { event.preventDefault(); state.view = 'home'; render(); });
+brandLink.addEventListener('click', event => { event.preventDefault(); if(state.mode==='digitcards') state.mode='mixed'; state.view = 'home'; render(); });
 render();

@@ -492,3 +492,36 @@ body { background:radial-gradient(circle at 4% 10%,#365ba3 0,transparent 30%),ra
 .smart-result .smart-counters {max-width:630px;margin:24px auto;}
 @media(max-width:880px){.smart-feature {grid-template-columns:65px minmax(0,1fr);padding:22px 25px;gap:14px}.smart-enter{grid-column:2;justify-self:start}.smart-topic-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:600px){.smart-feature{grid-template-columns:1fr;padding:22px}.smart-feature-mark{width:56px;height:56px;font-size:31px}.smart-enter{grid-column:1;justify-self:stretch;max-width:none}.smart-hub{padding:22px 16px 42px}.smart-hub-title{padding:20px 15px;align-items:start;gap:12px}.smart-hub-icon{min-width:54px;width:54px;height:54px;border-radius:17px;font-size:30px}.smart-counters{gap:7px}.smart-counters>div{padding:13px 5px}.smart-counters small{font-size:10px}.smart-counters span{font-size:23px}.smart-topic-grid{gap:8px}.smart-topic{min-height:110px}.smart-launch{flex-direction:column;align-items:stretch;padding:20px}.smart-launch .primary-button{width:100%}.smart-question-tag{margin-left:0;margin-bottom:8px;display:table}}
+
+
+/* V7 – blokkvilághoz illeszkedő, külön válaszkártyás játékmód */
+.digitcard-feature {display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:22px;align-items:center;padding:24px 35px;background:linear-gradient(115deg,#392d7b,#7157bd 58%,#345c9c);color:#fff;border-bottom:1px solid #a7a3db;}
+.digitcard-feature-art {display:flex;align-items:center;justify-content:center;min-height:116px;gap:0;}
+.digitcard-feature-art span {display:grid;place-items:center;width:59px;height:81px;border-radius:13px;background:#fff6d5;color:#352b68;border:3px solid #fff;box-shadow:0 7px 0 #241a5980,0 16px 18px #140e3333;font-size:37px;font-weight:950;}
+.digitcard-feature-art span:nth-child(1){transform:rotate(-15deg) translate(17px,4px);background:#d9fbf4;}
+.digitcard-feature-art span:nth-child(2){z-index:2;transform:translateY(-10px);background:#ffe0a4;}
+.digitcard-feature-art span:nth-child(3){transform:rotate(15deg) translate(-17px,4px);background:#eee2ff;}
+.digitcard-kicker{font-size:11px;letter-spacing:1.4px;color:#ffe69a;font-weight:950;}
+.digitcard-feature h2 {font-size:clamp(23px,3vw,30px);margin:5px 0 7px;}
+.digitcard-feature p {font-size:13px;line-height:1.55;margin:0 0 8px;color:#f0ecff;}
+.digitcard-feature p strong {color:#fff;}
+.digitcard-example {background:#ffffff1e;border-radius:10px;padding:7px 10px;display:inline-block;}
+.digitcard-enter {min-height:53px;padding:13px 20px;border:0;border-radius:14px;background:#ffe196;color:#332558;font-weight:950;white-space:nowrap;box-shadow:0 5px 0 #c5a44e;}
+.digitcard-enter:hover {background:#ffedb9;}
+.digitcard-paper {position:relative;isolation:isolate;max-width:620px;margin:23px auto 22px;padding:22px 23px 26px;border-radius:23px;border:4px solid #ffffff;background:linear-gradient(140deg,#fff5d7,#fce5b8 45%,#f9c69e);box-shadow:0 8px 0 #dcbda4,0 22px 35px #6042661b;text-align:center;overflow:hidden;animation:card-arrive .38s ease both;}
+.digitcard-paper::after {content:'✦';position:absolute;right:-19px;bottom:-37px;font-size:160px;line-height:1;opacity:.08;color:#62385a;z-index:-1;}
+.digitcard-paper-top {display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;text-align:left;color:#786048;font-size:10px;font-weight:950;letter-spacing:1.3px;}
+.digitcard-paper-number {display:flex;justify-content:center;gap:12px;margin:21px 0 17px;}
+.digitcard-paper-number span {display:grid;place-items:center;width:clamp(67px,13vw,100px);height:clamp(78px,15vw,110px);background:#ffffffeb;border:3px solid #d9b489;box-shadow:0 6px 0 #cfab7c;border-radius:14px;font-size:clamp(44px,8vw,70px);font-weight:1000;color:#252d62;}
+.digitcard-paper-kind {font-size:14px;font-weight:950;letter-spacing:1.1px;color:#674768;}
+.digitcard-paper-bottom {margin-top:7px;font-size:12px;color:#77644f;}
+.digitcard-choice-label {font-weight:900;color:#526281;text-align:center;font-size:13px;margin:13px 0 12px;}
+.digitcard-choices {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:550px;margin:0 auto;}
+.digitcard-choice {min-height:84px;background:#fff;border:3px solid #dee4f5;border-radius:17px;color:#27366a;box-shadow:0 6px 0 #dfe5ef;font-size:40px;font-weight:950;transition:transform .15s,border-color .15s,background .15s;}
+.digitcard-choice:hover:not(:disabled){background:#f5f2ff;border-color:#8d7de8;transform:translateY(-3px);}
+.digitcard-choice:disabled{opacity:.7;}
+.digitcard-choice:disabled.digitcard-correct{opacity:1;background:#e2f7e9;border-color:#42aa75;box-shadow:0 6px 0 #b7e1c7;}
+@keyframes card-arrive {from{transform:translateY(14px) rotate(-1deg);opacity:.5}to{transform:translateY(0) rotate(0);opacity:1}}
+@media(max-width:920px){.digitcard-feature {grid-template-columns:110px minmax(0,1fr);padding:22px 28px;gap:15px;}.digitcard-feature-art span{width:47px;height:69px;font-size:29px}.digitcard-enter{grid-column:2;justify-self:start}}
+@media(max-width:600px){.digitcard-feature {grid-template-columns:1fr;padding:22px;gap:13px;}.digitcard-feature-art{min-height:85px;justify-content:start;padding-left:12px}.digitcard-feature-art span{height:66px;width:45px}.digitcard-enter{grid-column:1;justify-self:stretch;}.digitcard-paper{margin:16px auto 17px;padding:17px 11px 22px}.digitcard-paper-number{gap:7px}.digitcard-paper-number span{width:28%;height:78px;font-size:50px}.digitcard-paper-top{font-size:9px}.digitcard-choice{min-height:70px;font-size:35px}.digitcard-choices{gap:9px}}
+@media(prefers-reduced-motion:reduce){.digitcard-paper{animation:none!important}}

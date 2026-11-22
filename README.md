@@ -1,27 +1,33 @@
-# Számmester 1000 – V6: Hibáimból tanulok 🧠🎮
+# Számmester 1000 – V7: Számjegykártyák 🎴
 
-Magyar nyelvű, ingyenes, reklámmentes, böngészőben futó matematikai társasjáték az 1000-es számkörhöz. A V6 a V5 bővítése: a hét birodalom, a 35 mezős blokkos pálya, a kincsek, érmék, jelvények, főellenfelek, hangok, korábbi feladatmódok és korábbi mentések megmaradnak.
+Ez a verzió **a V6 bővítése**, nem új játék. A hét matek-birodalom, a 35 mezős társasjáték, a kincsek, főellenfelek, jelvények, hangeffektek és a V6 Hibáimból tanulok műhely változatlanul elérhetők. A korábbi mentési kulcsokat nem módosítottuk.
 
-## A V6 újdonságai
+## Újdonság: alaki és valódi érték kártyapakli
 
-- A hibásan megoldott feladat automatikusan bekerül a **Hibáimból tanulok** gyakorlólistába, a megfelelő nehézségi szinten.
-- A normál tízfeladatos gyakorlásban ugyanaz a hibás feladat három későbbi kérdés után újra előkerülhet (egy körben legfeljebb két automatikus visszatérő feladat); a korábbról mentett hibák is visszakerülnek a következő körökbe.
-- Külön **Gyakorlóműhely**: témakörönként vagy vegyesen legfeljebb öt különböző hibás feladat ismétlése.
-- Kétszer, **külön ismétlés során, első próbálkozásra helyesen** kell válaszolni ahhoz, hogy egy tétel megtanultnak számítson.
-- A helytelen válasz után a gyermek újrapróbálkozhat magyarázattal, de az nem számít az önálló ismétlésbe.
-- A saját témakörökhöz és a főellenfelekhez a hibák rögzülnek, de a korábban rögzített 5+2 kalandfeladat sorrendjét nem változtatjuk meg.
-- A műhely nem ad plusz érmét, és nem változtatja a kaland csillagait/jelvényeit.
-- Az okos gyakorlás nehézségi szintenként külön a `szammester1000_smart_v6_0`, `_1`, `_2` helyi tárhely kulcson mentődik. Nem használ szervert, nem tárol neveket, és nem továbbít adatot.
+A főoldalon új, lila **Számjegykártya-kihívás** panel található.
 
-## Telepítés GitHub Pages-re
+- 12 kártya / kör, a 4 kérdés mindegyike pontosan háromszor, összekeverve:
+  - Melyik számjegynek a **legkisebb az alaki** értéke?
+  - Melyik számjegynek a **legnagyobb az alaki** értéke?
+  - Melyik számjegynek a **legkisebb a valódi** értéke?
+  - Melyik számjegynek a **legnagyobb a valódi** értéke?
+- Például a 936 esetében: legkisebb alaki → 3, legnagyobb alaki → 9, legkisebb valódi → 6, legnagyobb valódi → 9 (mert 900).
+- A válasz **mindig egy számjegy**, nem maga a százas vagy tízes érték.
+- A számjegyek minden kártyán különbözők, így csak egy helyes megoldás van.
+- Három nehézség: kezdő (1–6-os számjegyek), haladó (1–9), mester (a 0 is előfordulhat).
+- Az elsőre helyes válasz csillagot ad. Hibára magyarázat és újrapróbálkozás következik.
+- A hibás kártyák a **V6 Gyakorlóműhelyben**, külön „Számjegykártyák” témakörként is megjelennek.
+- A gyakorlás ebben a böngészőben, külön szintenként tárolódik; nincs név, regisztráció vagy adatküldés.
+- A kártyajáték nem ad extra érmét, és nem módosítja a kalandban teljesített pályákat.
+
+## GitHubra feltöltés
 
 1. Bontsd ki a ZIP-et.
-2. Nyisd meg az `index.html` fájlt, és próbáld ki a játékot.
-3. GitHub → `hajgre/szammester-1000` → `Add file` → `Upload files`.
-4. A repository gyökérmappájában cseréld ki mind a **négy** fájlt: `index.html`, `style.css`, `app.js`, `README.md`.
-5. Commit üzenet: `V6 – Okos gyakorlás és hibaismétlés`.
-6. A játék korábbi GitHub Pages-linkje változatlan. Ha kell, Ctrl+F5 vagy inkognitóablak.
+2. A kibontott mappában az `index.html` fájlt megnyitva előbb próbáld ki helyben a játékot.
+3. Nyisd meg: `https://github.com/hajgre/szammester-1000`.
+4. **Add file → Upload files**. Az eddigi négy, a tároló főmappájában található fájlt cseréld ki: `index.html`, `style.css`, `app.js`, `README.md`.
+5. Commit üzenet: `V7 – Alaki és valódi érték kártyapakli`.
+6. A GitHub Pages ugyanazon a címen jelenik meg: `https://hajgre.github.io/szammester-1000/`.
+7. Ha a régi nézet marad, frissíts Ctrl+F5-tel.
 
-**Fontos**: az ismétlőlista és az egyéb mentések az eredeti böngészőben maradnak; másik eszközön / privát böngészőben nem jelennek meg. A V5-ben elért haladást a V6 nem törli vagy írja át. A V6 az új használat közben megtörténő hibákat jegyzi meg, régebbi hibákat a korábbi verziók nem mentettek el.
-
-A játék oktatási segédlet, a feladatokat felnőttel együtt is lehet ellenőrizni.
+Minden korábbi helyi adat az eredeti böngészőhöz kötődik; a privát ablak külön tárhelyet használ.
