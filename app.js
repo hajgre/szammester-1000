@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 V8 – négy választható kártyapakli; minden korábbi kaland és mentés megőrizve.
+// Számmester 1000 V9 – a karakterbolt csak a 7 birodalom és 7 főellenfél teljesítése után nyílik.
 // Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
@@ -73,6 +73,22 @@ const BOSSES = [
   {name:'A Számegyenes Sárkánya', icon:'🐉', badge:'Számország bajnoka', motto:'Megtalálod az utolsó titkos helyet?', type:'rose'}
 ];
 
+// V9: kozmetikai kiegészítők. Valódi pénz, hirdetés vagy külső fiók nincs.
+// A bolt csak a választott nehézségi szint TELJES kalandjának végén nyílik.
+const SHOP_ITEMS = [
+  {id:'cap',slot:'head',name:'Kalandorsapka',emoji:'🧢',price:35,desc:'Klasszikus blokk-kalandor viselet.',rarity:'Gyakori'},
+  {id:'wizard-hat',slot:'head',name:'Varázskalap',emoji:'🎩',price:80,desc:'Egy csipetnyi varázslat minden lépéshez.',rarity:'Különleges'},
+  {id:'crown',slot:'head',name:'Aranykorona',emoji:'👑',price:125,desc:'Számország bajnokának fényes koronája.',rarity:'Legendás'},
+  {id:'glasses',slot:'face',name:'Menő szemüveg',emoji:'🕶️',price:30,desc:'A szuperokos hős kedvence.',rarity:'Gyakori'},
+  {id:'star-glasses',slot:'face',name:'Csillagszemüveg',emoji:'🤩',price:70,desc:'Ragyogj, mint a megszerzett csillagok!',rarity:'Különleges'},
+  {id:'cape',slot:'back',name:'Hősköpeny',emoji:'🦸',price:85,desc:'Lobogó, tarka kalandorköpeny.',rarity:'Különleges'},
+  {id:'wings',slot:'back',name:'Varázsszárnyak',emoji:'🪽',price:125,desc:'Mesebeli szárnyak a célba ért hősnek.',rarity:'Legendás'},
+  {id:'wand',slot:'hand',name:'Csillagpálca',emoji:'🪄',price:50,desc:'Varázsolj jókedvet a matek mellé!',rarity:'Gyakori'},
+  {id:'shield',slot:'hand',name:'Kristálypajzs',emoji:'🛡️',price:75,desc:'A hét birodalom emlékére.',rarity:'Különleges'}
+];
+const SHOP_SLOTS = [{id:'head',name:'Fejdísz'},{id:'face',name:'Szemüveg'},{id:'back',name:'Hátkiegészítő'},{id:'hand',name:'Kézben tartott tárgy'}];
+const ACTIVE_LEVEL_KEY='szammester1000_active_level_v9';
+
 // A 3 nehézségi szint kalandmentései egymástól függetlenek.
 const ADVENTURE_SAVE_KEY = 'szammester1000_adventure_v1_';
 const PLACE_NAMES = ['egyesek', 'tízesek', 'százasok', 'ezresek'];
@@ -86,7 +102,8 @@ const state = {
   playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox', boardAnimationFrom: null,
   rewardData: null, rewardTile: -1, rewardReturn: 'map', rewardClaimed: false, rewardAmount: 0,
   bossStageStars: 0, bossNewBadge: false, bossCoins: 0, soundEnabled: false,
-  autoSmartScheduled: 0, reviewWins: 0, reviewMastered: 0, reviewTopic: 'all', reviewFeedback: ''
+  autoSmartScheduled: 0, reviewWins: 0, reviewMastered: 0, reviewTopic: 'all', reviewFeedback: '',
+  shopMessage: ''
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -416,13 +433,25 @@ function insertSavedCardQuestions(questions,mode) {
   return questions;
 }
 // CSS-sel rajzolt, animált blokkfigurák: nincs szükség képfájlra.
-function blockAvatar(heroId, size = 'default', celebration = false) {
+function outfitForCurrentLevel() {
+  // A nehézségi szintek pénztárcái külön vannak; a felszerelések is külön mentődnek.
+  return readRewardData().shop.equipped;
+}
+function avatarAccessories(outfit) {
+  return SHOP_SLOTS.map(({id:slot}) => {
+    const item=SHOP_ITEMS.find(p=>p.id===outfit?.[slot] && p.slot===slot);
+    return item ? `<span class="avatar-accessory avatar-accessory--${item.id} avatar-accessory--${slot}" aria-hidden="true">${item.emoji}</span>` : '';
+  }).join('');
+}
+function blockAvatar(heroId, size = 'default', celebration = false, previewOutfit=null) {
   const id = HEROES.some(hero => hero.id === heroId) ? heroId : 'fox';
+  const outfit=previewOutfit || outfitForCurrentLevel();
   return `<span class="block-avatar block-avatar--${id} block-avatar--${size} ${celebration ? 'is-celebrating' : ''}" aria-hidden="true">
     <span class="avatar-tail"></span><span class="avatar-leg avatar-leg-left"></span><span class="avatar-leg avatar-leg-right"></span>
     <span class="avatar-arm avatar-arm-left"></span><span class="avatar-arm avatar-arm-right"></span>
     <span class="avatar-torso"><span class="avatar-mark">★</span></span>
     <span class="avatar-head"><span class="avatar-ears"></span><span class="avatar-eye avatar-eye-left"></span><span class="avatar-eye avatar-eye-right"></span><span class="avatar-smile"></span></span>
+    ${avatarAccessories(outfit)}
   </span>`;
 }
 // --- V6: az elrontott feladatok ismétlődő, helyben tárolt gyakorlása ---
@@ -589,6 +618,7 @@ function renderHome() {
       </div>
       <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
     </section>
+    ${renderShopTeaser()}
     <section class="digitcard-feature" aria-label="Számjegykártyák">
       <div class="digitcard-feature-art" aria-hidden="true"><span>9</span><span>3</span><span>6</span></div>
       <div><span class="digitcard-kicker">V7 • EREDETI PAKLI 🎴</span><h2>Számjegykártya-kihívás</h2>
@@ -680,7 +710,7 @@ function resetQuestionState() {
 // --- V5: külön mentett jutalmak, továbbra is csak ezen a böngészőn ---
 function newRewardData() {
   return { coins:0, chests:Array(35).fill(false), surprises:Array(35).fill(false), tileCoins:Array(35).fill(false),
-    bosses:Array(7).fill(false), bossDraft:null };
+    bosses:Array(7).fill(false), bossDraft:null, shop:{purchased:[],equipped:{}} };
 }
 function readRewardData() {
   const fresh=newRewardData();
@@ -690,6 +720,13 @@ function readRewardData() {
     fresh.coins=Number.isFinite(saved.coins)?Math.max(0,Math.min(999999,Math.floor(saved.coins))):0;
     for (const key of ['chests','surprises','tileCoins','bosses']) {
       if (Array.isArray(saved[key])) fresh[key]=fresh[key].map((_,i)=>saved[key][i]===true);
+    }
+    // A V5–V8 adatokat az eredeti formájukban megtartjuk, a bolt új mezőként kerül melléjük.
+    const owned=Array.isArray(saved.shop?.purchased)?saved.shop.purchased.filter(id=>SHOP_ITEMS.some(item=>item.id===id)):[];
+    fresh.shop.purchased=[...new Set(owned)];
+    for (const slot of SHOP_SLOTS) {
+      const id=saved.shop?.equipped?.[slot.id];
+      if (fresh.shop.purchased.includes(id) && SHOP_ITEMS.some(item=>item.id===id&&item.slot===slot.id)) fresh.shop.equipped[slot.id]=id;
     }
     const d=saved.bossDraft;
     if (d && Number.isInteger(d.stage) && d.stage>=0 && d.stage<7 &&
@@ -852,6 +889,89 @@ function renderBadgeShelf() {
     <div class="milestone-row"><span>${earned>=3?'🥈':'🔒'} Ezüst kalandor – 3 jelvény</span><span>${earned===7?'🏆':'🔒'} Arany számmester – 7 jelvény</span></div>
   </section>`;
 }
+// --- V9: a legutolsó főellenfél után feloldódó karakterbolt ---
+function shopProgress() {
+  const progress=readAdventureData();
+  const reward=readRewardData();
+  return {progress,reward,completed:progress.completed.filter(Boolean).length,defeated:reward.bosses.filter(Boolean).length};
+}
+function shopUnlocked() {
+  const p=shopProgress();
+  return p.completed===ADVENTURE_STAGES.length && p.defeated===BOSSES.length;
+}
+function goToShop() {
+  if (!shopUnlocked()) { state.shopMessage='🔒 A bolt csak a hét birodalom és mind a hét főellenfél teljesítése után nyílik meg.';openAdventureMap();return; }
+  state.rewardData=readRewardData();
+  state.adventureData=readAdventureData();
+  state.view='shop';state.shopMessage='';render();
+}
+function purchaseShopItem(itemId) {
+  if(state.view!=='shop' || !shopUnlocked())return;
+  const item=SHOP_ITEMS.find(i=>i.id===itemId);
+  if(!item)return;
+  // Vásárlás előtt ismét a helyi tárolót olvassuk: ne íródjon felül a korábban gyűjtött érme.
+  const data=readRewardData();
+  if(data.shop.purchased.includes(item.id)) {state.shopMessage='Ez a kiegészítő már a tiéd!';renderShop();return;}
+  if(data.coins<item.price){state.shopMessage=`Még ${item.price-data.coins} érme hiányzik a(z) ${item.name} megvételéhez.`;renderShop();return;}
+  data.coins-=item.price;
+  data.shop.purchased.push(item.id);
+  data.shop.equipped[item.slot]=item.id;
+  state.rewardData=data;
+  writeRewardData();
+  state.shopMessage=`✨ Megvetted: ${item.name}! A figurád már viseli is.`;
+  playSound('treasure');renderShop();
+}
+function equipShopItem(itemId) {
+  if(state.view!=='shop'||!shopUnlocked())return;
+  const item=SHOP_ITEMS.find(i=>i.id===itemId);
+  const data=readRewardData();
+  if(!item||!data.shop.purchased.includes(item.id))return;
+  if(data.shop.equipped[item.slot]===item.id){delete data.shop.equipped[item.slot];state.shopMessage=`${item.name} levéve.`;}
+  else {data.shop.equipped[item.slot]=item.id;state.shopMessage=`${item.name} felvéve!`;}
+  state.rewardData=data;writeRewardData();playSound('click');renderShop();
+}
+function renderShopTeaser() {
+  const info=shopProgress(),open=info.completed===7&&info.defeated===7;
+  return `<section class="shop-teaser ${open?'shop-teaser-open':''}" aria-label="Karakterbolt">
+    <div class="shop-teaser-icon" aria-hidden="true">${open?'🛍️':'🔒'}</div>
+    <div class="shop-teaser-copy"><span class="shop-kicker">V9 · VÉGSŐ JUTALOM</span><h2>🏪 Számország karakterboltja</h2>
+    <p>${open?'Gratulálok! Végigvitted a játékot. Most elköltheted a kincsvadászatban gyűjtött érméidet.':'A játék során gyűjtsd az érméket! Elkölteni csak azután tudod őket, ha az összes birodalmat teljesítetted és mind a hét főellenfelet legyőzted.'}</p>
+    <div class="shop-teaser-stats"><span>🏰 ${info.completed}/7 birodalom</span><span>⚔️ ${info.defeated}/7 főellenfél</span><span>🪙 ${info.reward.coins} érme</span></div></div>
+    <button type="button" class="${open?'shop-open-button':'shop-locked-button'}" data-action="shop" ${open?'':'disabled'}>${open?'🎁 Bolt megnyitása →':'🔒 A kaland végén nyílik'}</button>
+  </section>`;
+}
+function renderShop() {
+  if(!shopUnlocked()){openAdventureMap();return;}
+  const reward=readRewardData();state.rewardData=reward;
+  const outfit=reward.shop.equipped;
+  const owned=reward.shop.purchased;
+  const items=SHOP_ITEMS.map(item=>{
+    const purchased=owned.includes(item.id),equipped=outfit[item.slot]===item.id;
+    const canBuy=reward.coins>=item.price;
+    const preview={...outfit,[item.slot]:item.id};
+    return `<article class="shop-product ${equipped?'shop-product-equipped':''}">
+      <div class="shop-product-art"><span class="shop-product-icon" aria-hidden="true">${item.emoji}</span>${blockAvatar(state.hero,'shop-mini',false,preview)}</div>
+      <div class="shop-product-copy"><span class="shop-product-rarity">${item.rarity} · ${SHOP_SLOTS.find(s=>s.id===item.slot).name}</span><h3>${item.name}</h3><p>${item.desc}</p></div>
+      <div class="shop-product-footer"><strong>${purchased?'✓ Megszerezve':`🪙 ${item.price}`}</strong>
+      <button type="button" data-action="${purchased?'shop-equip':'shop-buy'}" data-item="${item.id}" class="${purchased?'shop-equip-button':'shop-buy-button'}" ${(!purchased&&!canBuy)?'disabled':''}>${purchased?(equipped?'Leveszem':'Felveszem'):(canBuy?'Megveszem':'Kevés érme')}</button></div>
+    </article>`;
+  }).join('');
+  app.innerHTML=`<section class="shop-header">
+    <button type="button" class="text-button" data-action="map">← Vissza a térképhez</button>
+    <span class="shop-kicker">🏆 A HÉT BIRODALOM UTÁN · V9</span>
+    <h1>Számország <span>karakterboltja</span> 🛍️</h1>
+    <p>Megcsináltad! Mind a hét birodalmat és főellenfelet legyőzted. Most végre elköltheted a megérdemelt érméket. Csak játékbeli kiegészítők – valódi pénz nélkül!</p>
+    <div class="shop-top-grid"><div class="shop-dressing"><div class="shop-dressing-scene">${blockAvatar(state.hero,'shop-hero',true)}<span aria-hidden="true" class="shop-dressing-spark shop-spark-a">✦</span><span aria-hidden="true" class="shop-dressing-spark shop-spark-b">✧</span></div><div class="shop-dressing-details"><strong>${HEROES.find(h=>h.id===state.hero)?.name||'Róka kalandor'}</strong><span>Próbáld fel a megszerzett kiegészítőket!</span></div></div>
+      <div class="shop-wallet"><span class="shop-wallet-title">A kincstárad</span><div class="shop-wallet-number">🪙 ${reward.coins}</div><p>Ennyi érméd maradt. A vásárlás egyszer levonja a vételárat, a már megvett kiegészítőket pedig bármikor ingyen cserélheted.</p><span class="shop-wallet-count">🎒 ${owned.length} / ${SHOP_ITEMS.length} megszerzett tárgy</span></div></div>
+    ${state.shopMessage?`<p class="shop-message" role="status">${state.shopMessage}</p>`:''}
+  </section>
+  <section class="shop-content"><div class="shop-section-head"><div><span class="shop-kicker">SZABADON KOMBINÁLHATÓ KIEGÉSZÍTŐK</span><h2>✨ Válassz felszerelést!</h2><p>Fejdíszből, szemüvegből, hátkiegészítőből és kézben tartott tárgyból egyszerre egyet viselhetsz.</p></div><span class="shop-count-tag">${SHOP_ITEMS.length} KINCS</span></div>
+    <div class="shop-products">${items}</div>
+    <div class="shop-explainer">💡 <strong>A játék menete nem változik:</strong> a kiegészítők csak a figurád megjelenését módosítják, nem adnak előnyt a matematikai feladatokban. A vásárlás kizárólag a kaland befejezése után érhető el. A mentések a böngésződben tárolódnak.</div>
+    <div class="shop-bottom-actions"><button type="button" class="primary-button" data-action="map">🗺️ Vissza Számországba</button><button type="button" class="secondary-button" data-action="home">Főmenü</button></div>
+  </section>`;
+}
+
 let audioCtx=null;
 function playSound(kind) {
   if (!state.soundEnabled) return;
@@ -1105,6 +1225,8 @@ function renderAdventureMap() {
     <div class="reward-sound-row"><span>🎵 A hangeffektek szabadon ki-be kapcsolhatók.</span>${soundButton()}</div>
     <div class="smart-map-link"><div><strong>🧠 Hibáimból tanulok</strong><p>${smartPendingCount()} feladat vár ismétlésre ezen a nehézségi szinten.</p></div><button type="button" class="secondary-button" data-action="review-home">Gyakorlóműhely →</button></div>
     <div class="hero-picker voxel-hero-picker"><strong>🧍 Válassz egy blokk-hőst!</strong><div class="hero-options" role="group" aria-label="Játékbábu kiválasztása">${HEROES.map(hero=>`<button type="button" class="hero-option ${state.hero===hero.id?'active':''}" data-action="hero" data-hero="${hero.id}" aria-pressed="${state.hero===hero.id}">${blockAvatar(hero.id,'picker')}<span class="hero-name">${hero.name}</span></button>`).join('')}</div></div>
+    ${renderShopTeaser()}
+    ${state.shopMessage?`<p class="shop-message" role="status">${state.shopMessage}</p>`:''}
     ${state.rewardData.bossDraft?`<div class="adventure-resume boss-resume"><div><strong>⚔️ Félbehagyott főellenfél!</strong><span>${BOSSES[state.rewardData.bossDraft.stage].name}</span></div><button type="button" class="primary-button" data-action="boss" data-stage="${state.rewardData.bossDraft.stage}">Folytatom →</button></div>`:''}
     ${draft && !state.rewardData.bossDraft ? `<div class="adventure-resume"><div><strong>📌 Félbehagyott küldetésed van</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index+1}. feladat az 5-ből</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatom →</button></div>` : ''}
     <div class="board-frame"><div class="board-heading"><span>🧱 BLOKKVILÁG TÁRSASTÁBLA</span><span>7 BIRODALOM · 35 MEZŐ</span></div>${renderBoard(progress)}<p class="board-scroll-tip">📱 Telefonon a pályát oldalirányban is görgetheted.</p></div>
@@ -1116,7 +1238,7 @@ function renderAdventureMap() {
         return `<div class="mission-group"><button type="button" class="board-mission ${completed?'mission-complete':''}" data-action="stage" data-stage="${i}" ${unlocked?'':'disabled'}><span class="board-mission-emoji">${unlocked?mode.emoji:'🔒'}</span><span><strong>${i+1}. ${mode.name}</strong><small>${completed?`⭐ ${progress.best[i]}/5 · Újrajátszható`:draft?.stage===i?'▶ Folytatás':unlocked?'▶ Kezdés':'Még zárva'}</small></span><span class="board-mission-arrow">${unlocked?'→':'·'}</span></button>${battleAvailable?`<button type="button" class="boss-shortcut" data-action="boss" data-stage="${i}">${state.rewardData.bosses[i]?'🏅 Főellenfél újrakihívása':'⚔️ Főellenfél kihívása'}</button>`:''}</div>`;
       }).join('')}</div></div>
     ${renderBadgeShelf()}
-    ${done===7?'<div class="adventure-treasure">🏆 <strong>Gratulálok! Számország minden kapuját kinyitottad!</strong><p>A megszerzett csillagokat a táblán újrajátszással is gyarapíthatod.</p></div>':''}
+    ${shopUnlocked()?'<div class="adventure-treasure">🏆 <strong>Számország összes főellenfelét legyőzted!</strong><p>Az érméket most már elköltheted a karakterboltban. 🛍️</p></div>':done===7?'<div class="adventure-treasure">🏆 <strong>Minden kaput kinyitottál!</strong><p>Ha minden főellenfél jelvényét is megszerezted, megnyílik a karakterbolt.</p></div>':''}
     <p class="adventure-save-note">💾 A haladás és a bábu választása ezen az eszközön, ebben a böngészőben mentődik. Nem szinkronizálódik automatikusan más eszközre. A korábbi Kaland mód eredményei és a V4-ben megnyitott birodalmak megmaradnak.</p>
   </section>`;
 }
@@ -1134,7 +1256,7 @@ function renderAdventureResult() {
     <p><strong>${boss.name}</strong> legyőzve! ${mode.name}: a kapu öt feladatát és a főellenfél két kihívását is megoldottad.</p>
     <div class="victory-prizes"><span>⭐ ${state.stars} / 5 csillag</span><span>🏅 ${boss.badge}</span><span>🪙 ${state.bossNewBadge?'+25 új érme':'A jelvény már megvolt'}</span></div>
     <p class="best-score">A birodalom eddigi legjobb eredménye: ${state.adventureData.best[stage]} / 5 csillag.</p>
-    <div class="result-buttons">${last?'':`<button type="button" class="primary-button" data-action="next-stage">Következő birodalom →</button>`}
+    <div class="result-buttons">${shopUnlocked()?`<button type="button" class="primary-button" data-action="shop">🛍️ Megnyílt a karakterbolt! →</button>`:''}${last?'':`<button type="button" class="primary-button" data-action="next-stage">Következő birodalom →</button>`}
        <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button><button type="button" class="secondary-button" data-action="review-home">🧠 Hibáimból tanulok (${smartPendingCount()})</button></div>
     <p class="info-bar">Minden főellenfél gyakorolható újra. Az érméket és a jelvényeket az első győzelemért kapod, így nincsen végtelen jutalomgyűjtés.</p>
   </section>`;
@@ -1292,6 +1414,7 @@ function render() {
   if (state.view === 'reward') renderReward();
   if (state.view === 'smart') renderSmartHub();
   if (state.view === 'smart-result') renderSmartResult();
+  if (state.view === 'shop') renderShop();
 }
 function tryAnswer(correct, userFriendlyError) {
   const q = state.questions[state.index];
@@ -1345,11 +1468,14 @@ app.addEventListener('click', event => {
   const button = event.target.closest('button[data-action]');
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
-  if (action === 'map') { openAdventureMap(); return; }
+  if (action === 'map') { state.shopMessage='';openAdventureMap(); return; }
+  if (action === 'shop') {goToShop();return;}
+  if (action === 'shop-buy') {purchaseShopItem(button.dataset.item);return;}
+  if (action === 'shop-equip') {equipShopItem(button.dataset.item);return;}
   if (action === 'cards') { state.mode='digitcards'; beginGame(); return; }
   if (action === 'card-deck') { const mode=button.dataset.mode;if(CARD_DECKS.some(d=>d.id===mode)){state.mode=mode;beginGame();}return; }
   if (action==='review-home') { state.view='smart';state.reviewTopic='all';render();return; }
-  if (action==='review-level') { const level=Number(button.dataset.level);if(level>=0 && level<LEVELS.length) {state.level=level;render();} return; }
+  if (action==='review-level') { const level=Number(button.dataset.level);if(Number.isInteger(level)&&level>=0 && level<LEVELS.length) {state.level=level;try{window.localStorage.setItem(ACTIVE_LEVEL_KEY,String(level));}catch(error){}render();} return; }
   if (action==='review-topic') { const topic=button.dataset.topic;if(topic==='all'||SMART_TOPICS.some(m=>m.id===topic)){state.reviewTopic=topic;render();}return; }
   if (action==='review-start') { if(state.view==='smart')beginSmartReview();return; }
   if (action==='sound') {
@@ -1384,13 +1510,14 @@ app.addEventListener('click', event => {
   }
   if (action === 'map-level') {
     state.level = Number(button.dataset.level);
-    openAdventureMap();
+    if(Number.isInteger(state.level)&&state.level>=0&&state.level<LEVELS.length)try {window.localStorage.setItem(ACTIVE_LEVEL_KEY,String(state.level));}catch(error){}
+    state.shopMessage='';openAdventureMap();
     return;
   }
   if (action === 'stage') { startAdventureStage(Number(button.dataset.stage)); return; }
   if (action === 'next-stage') { startAdventureStage(state.adventureStage + 1); return; }
   if (action === 'set-mode') { state.mode = button.dataset.mode; render(); return; }
-  if (action === 'set-level') { state.level = Number(button.dataset.level); render(); return; }
+  if (action === 'set-level') { const level=Number(button.dataset.level); if(Number.isInteger(level)&&level>=0&&level<LEVELS.length){state.level=level;try{window.localStorage.setItem(ACTIVE_LEVEL_KEY,String(level));}catch(error){}render();} return; }
   if (action === 'start' || action === 'restart') { beginGame(); return; }
   if (action === 'home') { if (CARD_DECKS.some(d=>d.id===state.mode)) state.mode='mixed'; state.view = 'home'; render(); return; }
   if (action === 'next') {
@@ -1439,6 +1566,7 @@ try {
   const savedHero=window.localStorage.getItem(HERO_SAVE_KEY);
   if (HEROES.some(h=>h.id===savedHero)) state.hero=savedHero;
 } catch(error) { /* Tárhely nélkül az alapértelmezett róka bábu marad. */ }
+try {const level=Number(window.localStorage.getItem(ACTIVE_LEVEL_KEY));if(Number.isInteger(level)&&level>=0&&level<LEVELS.length)state.level=level;} catch(error) {}
 try { state.soundEnabled=window.localStorage.getItem(SOUND_SAVE_KEY)==='on'; }
 catch(error) { state.soundEnabled=false; }
 const brandLink = document.getElementById('brandLink');
