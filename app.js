@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 V9 – a karakterbolt csak a 7 birodalom és 7 főellenfél teljesítése után nyílik.
+// Számmester 1000 V10 – matematikai és mentési ellenőrzés, biztonsági másolat, használhatóság.
 // Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
@@ -103,7 +103,7 @@ const state = {
   rewardData: null, rewardTile: -1, rewardReturn: 'map', rewardClaimed: false, rewardAmount: 0,
   bossStageStars: 0, bossNewBadge: false, bossCoins: 0, soundEnabled: false,
   autoSmartScheduled: 0, reviewWins: 0, reviewMastered: 0, reviewTopic: 'all', reviewFeedback: '',
-  shopMessage: ''
+  shopMessage: '', backupMessage: ''
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -599,6 +599,136 @@ function renderSmartResult() {
     <p class="info-bar">Egy elrontott feladat csak két külön ismétlés során adott, elsőre helyes válasz után kerül le a listáról. A kincsek, főellenfelek és kalandmentések érintetlenek maradnak.</p>
   </section>`;
 }
+// --- V10: helyi mentések biztonsági másolata; nem igényel fiókot vagy szervert. ---
+const BACKUP_VERSION = 1;
+const BACKUP_KEY_RE = /^(?:szammester1000_(?:adventure_v1|rewards_v5|smart_v6)_[012]|szammester1000_(?:order|place|face|real|neighbors|exchange|line|mixed|digitcards|placecards|exchangecards|neighborcards)_[012]|szammester1000_(?:board_hero_v3|sound_v5|active_level_v9))$/;
+function isGameSaveKey(key) { return BACKUP_KEY_RE.test(key); }
+function makeBackupObject() {
+  const saves={};
+  try {
+    for (let i=0;i<window.localStorage.length;i++) {
+      const key=window.localStorage.key(i);
+      if (isGameSaveKey(key)) saves[key]=window.localStorage.getItem(key);
+    }
+  } catch(e) { throw new Error('A böngésző nem engedi a mentések olvasását.'); }
+  return {game:'szammester-1000',version:BACKUP_VERSION,exportedAt:new Date().toISOString(),saves};
+}
+function isSafeSavedQuestion(q) {
+  if (!q || typeof q!=='object'||Array.isArray(q) || !SMART_TOPICS.some(t=>t.id===q.type)) return false;
+  const fields=['title','hint','tip','label','expression','cardNote','cardBadge'];
+  if (!fields.every(f=>q[f]===undefined||(typeof q[f]==='string'&&q[f].length<=400&&!/[<>]/.test(q[f])))) return false;
+  if (typeof q.title!=='string' || typeof q.explain!=='string' || q.explain.length>1000) return false;
+  // A játék saját magyarázataiban kizárólag ezek a formázó HTML-elemek szerepelhetnek.
+  const withoutSafeTags=q.explain.replace(/<\/?strong>/g,'').replace(/<span aria-hidden="true">|<\/span>/g,'');
+  if (/[<>]/.test(withoutSafeTags)) return false;
+  if (q.options && (!Array.isArray(q.options)||q.options.length>11||!q.options.every(v=>['number','string'].includes(typeof v)&&String(v).length<=32&&!/[<>]/.test(String(v)))))return false;
+  if (q.numbers && (!Array.isArray(q.numbers)||q.numbers.length>10||!q.numbers.every(v=>Number.isInteger(v)&&v>=0&&v<=1000)))return false;
+  for (const n of ['number','n','start','step','target','targetIndex']){
+    if(q[n]!==undefined&&(!Number.isInteger(q[n])||q[n]<0||q[n]>1000))return false;
+  }
+  if(q.highlight!==undefined&&(!Number.isInteger(q.highlight)||q.highlight< -1||q.highlight>3))return false;
+  if(q.cardKind!==undefined&&(typeof q.cardKind!=='string'||q.cardKind.length>40||/[<>]/.test(q.cardKind)))return false;
+  if(q.answer!==undefined){
+    const vals=Array.isArray(q.answer)?q.answer:[q.answer];
+    if(vals.length>10||!vals.every(v=>['number','string'].includes(typeof v)&&String(v).length<40&&!/[<>]/.test(String(v))))return false;
+  }
+  if(['digitcards','placecards','exchangecards','neighborcards'].includes(q.type)){
+    const kinds={digitcards:DIGIT_CARD_KINDS,placecards:PLACE_CARD_KINDS,exchangecards:EXCHANGE_CARD_KINDS,neighborcards:NEIGHBOR_CARD_KINDS}[q.type];
+    if(!kinds.includes(q.cardKind)||!Array.isArray(q.options))return false;
+  }
+  if(['place','face','real','digitcards','placecards','neighborcards'].includes(q.type) && !Number.isInteger(q.number))return false;
+  if(q.type==='line' && !['start','step','target','targetIndex'].every(k=>Number.isInteger(q[k])))return false;
+  if(q.type==='order' && !Array.isArray(q.numbers))return false;
+  return true;
+}
+function validateBackupEntry(key,raw) {
+  if(!isGameSaveKey(key)||typeof raw!=='string'||raw.length>220000)return false;
+  if(key===HERO_SAVE_KEY)return HEROES.some(h=>h.id===raw);
+  if(key===SOUND_SAVE_KEY)return raw==='on'||raw==='off';
+  if(key===ACTIVE_LEVEL_KEY)return ['0','1','2'].includes(raw);
+  if(/^szammester1000_(?:order|place|face|real|neighbors|exchange|line|mixed|digitcards|placecards|exchangecards|neighborcards)_[012]$/.test(key))return /^(?:\d|1[0-2])$/.test(raw);
+  let d;
+  try{d=JSON.parse(raw);}catch(e){return false;}
+  if(!d||typeof d!=='object'||Array.isArray(d))return false;
+  if(key.startsWith(ADVENTURE_SAVE_KEY)){
+    if(!Array.isArray(d.completed)||d.completed.length!==7||!d.completed.every(v=>typeof v==='boolean'))return false;
+    if(!Array.isArray(d.best)||d.best.length!==7||!d.best.every(v=>Number.isInteger(v)&&v>=0&&v<=5))return false;
+    if(d.draft!==null&&d.draft!==undefined){
+      const q=d.draft;
+      if(!q||!Number.isInteger(q.stage)||q.stage<0||q.stage>6||!Number.isInteger(q.index)||q.index<0||q.index>4||
+         !Array.isArray(q.questions)||q.questions.length!==5||!q.questions.every(v=>isSafeSavedQuestion(v)&&v.type===ADVENTURE_STAGES[q.stage].id))return false;
+    }
+    return true;
+  }
+  if(key.startsWith(REWARDS_SAVE_KEY)){
+    if(!Number.isInteger(d.coins)||d.coins<0||d.coins>999999)return false;
+    for(const [k,count] of [['chests',35],['surprises',35],['tileCoins',35],['bosses',7]]){
+      if(!Array.isArray(d[k])||d[k].length!==count||!d[k].every(v=>typeof v==='boolean'))return false;
+    }
+    if(d.bossDraft!==null&&d.bossDraft!==undefined){
+      const q=d.bossDraft;
+      if(!q||!Number.isInteger(q.stage)||q.stage<0||q.stage>6||!Number.isInteger(q.index)||q.index<0||q.index>1||
+         !Array.isArray(q.questions)||q.questions.length!==2||!q.questions.every(v=>isSafeSavedQuestion(v)&&v.type===ADVENTURE_STAGES[q.stage].id))return false;
+    }
+    if(d.shop!==undefined){
+      if(!d.shop||!Array.isArray(d.shop.purchased)||d.shop.purchased.length>SHOP_ITEMS.length||
+         !d.shop.purchased.every(id=>SHOP_ITEMS.some(x=>x.id===id)))return false;
+      if(d.shop.equipped!==undefined){
+        if(!d.shop.equipped||typeof d.shop.equipped!=='object')return false;
+        for(const [slot,id] of Object.entries(d.shop.equipped)){
+          if(!SHOP_SLOTS.some(x=>x.id===slot)||!d.shop.purchased.includes(id)||!SHOP_ITEMS.some(x=>x.id===id&&x.slot===slot))return false;
+        }
+      }
+    }
+    return true;
+  }
+  if(key.startsWith(SMART_SAVE_KEY)){
+    return Array.isArray(d.queue)&&d.queue.length<=SMART_QUEUE_LIMIT&&
+      d.queue.every(e=>e&&typeof e.id==='string'&&e.id.length<4000&&isSafeSavedQuestion(e.q)&&e.id===smartQuestionId(e.q)&&
+      Number.isInteger(e.successes)&&e.successes>=0&&e.successes<=2)&&
+      Number.isSafeInteger(d.mastered)&&d.mastered>=0&&Number.isSafeInteger(d.wrongTotal)&&d.wrongTotal>=0;
+  }
+  return false;
+}
+function readBackupObject(backup) {
+  if(!backup||backup.game!=='szammester-1000'||backup.version!==BACKUP_VERSION||
+    !backup.saves||typeof backup.saves!=='object'||Array.isArray(backup.saves))throw new Error('Ez nem megfelelő Számmester biztonsági mentés.');
+  const entries=Object.entries(backup.saves);
+  if(entries.length===0||entries.length>60||!entries.every(([key,value])=>validateBackupEntry(key,value)))
+    throw new Error('A mentés hiányos, sérült vagy nem megbízható adatokat tartalmaz.');
+  return entries;
+}
+function downloadBackup() {
+  try {
+    const backup=makeBackupObject();
+    if(!Object.keys(backup.saves).length){ state.backupMessage='ℹ️ Még nincs elmentett játékállás. Játssz egy kört, majd próbáld újra!';render();return;}
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='szammester-1000-mentes.json';document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    state.backupMessage='✅ A biztonsági mentés letöltése elindult. Őrizd meg a fájlt!';render();
+  } catch(e){state.backupMessage='⚠️ Nem sikerült mentést készíteni: '+e.message;render();}
+}
+async function restoreBackupFile(file) {
+  if(!file)return;
+  try {
+    if(file.size>1100000)throw new Error('A mentésfájl túl nagy.');
+    const backup=JSON.parse(await file.text());
+    const entries=readBackupObject(backup);
+    if(!window.confirm(`A fájlban ${entries.length} mentési adat van. A meglévő azonos nevű mentéseidet felülírjuk. Biztosan visszaállítod?`))return;
+    // Hiba esetén visszaállítjuk a már módosított értékeket is.
+    const before=entries.map(([key])=>[key,window.localStorage.getItem(key)]);
+    try{for(const [key,value] of entries)window.localStorage.setItem(key,value);}
+    catch(e){for(const [key,old] of before){try{if(old===null)window.localStorage.removeItem(key);else window.localStorage.setItem(key,old);}catch(_){} }throw e;}
+    state.level=Number(window.localStorage.getItem(ACTIVE_LEVEL_KEY)||0);
+    if(!Number.isInteger(state.level)||state.level<0||state.level>2)state.level=0;
+    const hero=window.localStorage.getItem(HERO_SAVE_KEY);state.hero=HEROES.some(h=>h.id===hero)?hero:'fox';
+    state.soundEnabled=window.localStorage.getItem(SOUND_SAVE_KEY)==='on';
+    state.adventureData=null;state.rewardData=null;state.mode='mixed';state.view='home';
+    state.backupMessage='✅ Sikerült! A korábbi kalandállás, érmék és gyakorlási eredmények visszaálltak.';render();
+  }catch(e){state.backupMessage='⚠️ Nem sikerült visszaállítani: '+(e instanceof SyntaxError?'nem olvasható JSON-fájl.':e.message);render();}
+}
+
 function renderHome() {
   app.innerHTML = `
     <section class="home-hero">
@@ -612,7 +742,7 @@ function renderHome() {
     <section class="adventure-feature" aria-label="Új kalandmód">
       <div class="adventure-feature-icon block-feature-icon" aria-hidden="true">${blockAvatar(state.hero, 'feature')}</div>
       <div class="adventure-feature-text">
-        <span class="adventure-kicker">V6 • KINCSVADÁSZAT + OKOS GYAKORLÁS</span>
+        <span class="adventure-kicker">V10 • KALAND + KÁRTYÁK + MENTÉSVÉDELEM</span>
         <h2>Számország: Kincsvadászat</h2>
         <p>Fedezd fel a 35 mezős blokkvilágot! Nyiss 14 kincsesládát, találj 7 meglepetésmezőt, és győzd le a 7 birodalom főellenfelét!</p>
       </div>
@@ -671,6 +801,16 @@ function renderHome() {
         </div>
       </div>
       <div class="info-bar">💡 <strong>Tipp:</strong> Hibázni ér! A V6 megjegyzi az elrontott feladatokat, és később újra megmutatja őket. A kaland mentései, érméi és jelvényei változatlanok.</div>
+    </section>
+    <section class="backup-feature" aria-label="Mentések biztonsági másolata">
+      <div class="backup-symbol" aria-hidden="true">🛡️</div>
+      <div class="backup-body"><span class="backup-kicker">V10 · ADATVÉDELEM</span><h2>Őrizd meg a kalandodat!</h2>
+      <p>A csillagok, érmék, jelvények és a gyakorlóműhely adatai ebben a böngészőben tárolódnak. Tölts le egy biztonsági másolatot, mielőtt gépet vagy böngészőt váltasz!</p>
+      <div class="backup-actions"><button type="button" class="backup-download" data-action="backup-export">⬇️ Mentéseim letöltése</button>
+      <button type="button" class="backup-restore" data-action="backup-import">📂 Mentés visszaállítása</button>
+      <input type="file" id="backupFile" accept=".json,application/json" hidden aria-label="Korábbi Számmester mentésfájl kiválasztása"></div>
+      <p class="backup-help">A visszaállítás a fájlban szereplő mentéseket felülírja. Csak saját Számmester-mentésfájlt használj!</p>
+      ${state.backupMessage ? `<p class="backup-status" role="status">${state.backupMessage}</p>` : ''}</div>
     </section>`;
 }
 function beginGame() {
@@ -1416,6 +1556,17 @@ function render() {
   if (state.view === 'smart-result') renderSmartResult();
   if (state.view === 'shop') renderShop();
 }
+function focusAfterAnswer(kind) {
+  if(state.view!=='game')return;
+  let target;
+  if(state.locked)target=app.querySelector('[data-action="next"]');
+  else if(kind==='exchange')target=app.querySelector('input[name="answer"]');
+  else if(kind==='neighbors')target=app.querySelector('input[name="low"]');
+  else if(kind==='order')target=app.querySelector('[data-action="order-check"]:not([disabled])')||app.querySelector('[data-action="order-pick"]:not([disabled])');
+  else if(kind==='line')target=app.querySelector('[data-action="tick"]:not([disabled])');
+  else target=[...app.querySelectorAll('[data-action="choose"]:not([disabled])')].find(b=>b.dataset.value===String(state.lastChoice))||app.querySelector('[data-action="choose"]:not([disabled])');
+  if(target){target.focus({preventScroll:true});if((kind==='exchange'||kind==='neighbors')&&typeof target.select==='function')target.select();}
+}
 function tryAnswer(correct, userFriendlyError) {
   const q = state.questions[state.index];
   if (state.locked) return;
@@ -1441,22 +1592,23 @@ function tryAnswer(correct, userFriendlyError) {
     playSound('error');
   }
   render();
+  focusAfterAnswer(q.type);
   saveCurrentGame();
 }
-function checkInteger(text) { return /^[0-9]{1,4}$/.test(String(text).trim()); }
+function checkInteger(text) { const value=String(text).trim();return /^[0-9]{1,4}$/.test(value)&&Number(value)<=1000; }
 function handleSubmit(form) {
   const q = state.questions[state.index];
   if (state.locked) return;
   if (form.dataset.form === 'exchange') {
     const answer = String(form.elements.answer.value).trim();
     state.inputs = { answer };
-    if (!checkInteger(answer)) { state.feedback={type:'error',text:'Csak egy 0 és 1000 közötti egész számot írj be!'};render();return; }
+    if (!checkInteger(answer)) { state.feedback={type:'error',text:'Csak egy 0 és 1000 közötti egész számot írj be!'};render();focusAfterAnswer('exchange');return; }
     tryAnswer(Number(answer) === q.answer);
   } else if (form.dataset.form === 'neighbors') {
     const low = String(form.elements.low.value).trim();
     const high = String(form.elements.high.value).trim();
     state.inputs = { low, high };
-    if (!checkInteger(low) || !checkInteger(high)) { state.feedback={type:'error',text:'Mindkét mezőbe írj egy egész számot!'};render();return; }
+    if (!checkInteger(low) || !checkInteger(high)) { state.feedback={type:'error',text:'Mindkét mezőbe írj egy 0 és 1000 közötti egész számot!'};render();focusAfterAnswer('neighbors');return; }
     tryAnswer(Number(low) === q.answer[0] && Number(high) === q.answer[1]);
   }
 }
@@ -1464,10 +1616,15 @@ app.addEventListener('submit', event => {
   event.preventDefault();
   handleSubmit(event.target);
 });
+app.addEventListener('change', event => {
+  if(event.target?.id==='backupFile')restoreBackupFile(event.target.files?.[0]);
+});
 app.addEventListener('click', event => {
   const button = event.target.closest('button[data-action]');
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
+  if (action === 'backup-export') { downloadBackup();return; }
+  if (action === 'backup-import') { app.querySelector('#backupFile')?.click();return; }
   if (action === 'map') { state.shopMessage='';openAdventureMap(); return; }
   if (action === 'shop') {goToShop();return;}
   if (action === 'shop-buy') {purchaseShopItem(button.dataset.item);return;}
@@ -1549,11 +1706,12 @@ app.addEventListener('click', event => {
     if (!state.selected.includes(i) && i >= 0 && i < q.numbers.length) state.selected.push(i);
     state.feedback = null;
     render();
+    focusAfterAnswer('order');
     saveCurrentGame();
   } else if (action === 'order-undo') {
-    state.selected.pop(); state.feedback = null; render(); saveCurrentGame();
+    state.selected.pop(); state.feedback = null; render(); focusAfterAnswer('order'); saveCurrentGame();
   } else if (action === 'order-clear') {
-    state.selected = []; state.feedback = null; render(); saveCurrentGame();
+    state.selected = []; state.feedback = null; render(); focusAfterAnswer('order'); saveCurrentGame();
   } else if (action === 'order-check') {
     if (state.selected.length !== q.numbers.length) return;
     const submitted = state.selected.map(i => q.numbers[i]);

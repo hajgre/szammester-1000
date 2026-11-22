@@ -1,29 +1,44 @@
-# Számmester 1000 – V9: Karakterbolt, csak a teljes kaland után 🛍️
+# Számmester 1000 – V10: Minőségellenőrzés és mentésvédelem
 
-**Ez a V8 folytatása.** Az összes korábbi funkció (hét birodalom, 35 mező, 7 főellenfél, kincsesládák, érmék, jelvények, hangok, négy kártyapakli, hibaismétlés) és a régi mentési kulcsok megmaradtak.
+Ez a V9 játék **teljes, frissített változata**. A hét matematikai birodalom, a kártyapaklik, a főellenfelek, a jutalmak és a karakterbolt megmaradtak.
 
-## Új szabály: előbb teljesítsd a játékot, utána vásárolhatsz
+## Mit javítottunk a V10-ben?
 
-- Az érmék a korábbi módon gyűlnek. **Az első hat birodalomban és a hetedik főellenfél legyőzéséig nem lehet elkölteni őket.**
-- A karakterbolt **csak akkor nyílik meg**, ha a választott nehézségi szinten **mind a hét birodalom teljesítve** és **mind a hét főellenfél jelvénye megszerezve**. A kártyapaklik befejezése önmagában nem nyitja meg a boltot.
-- A bolt a játék befejezését követően a főoldalon, a térképen és az utolsó győzelem után érhető el.
-- A megvásárolt kiegészítők újrajátszásnál is megmaradnak; egy megvett tárgyat utólag korlátlanul, **ingyen** fel/le lehet venni.
-- **9 kiegészítő** négy ruházati helyen: sapka/varázskalap/korona, kétféle szemüveg, köpeny/szárnyak, varázspálca/pajzs. Egyszerre helyenként egy viselhető.
-- Az öltözékek a térképen látható bábu, a hősválasztó, a győzelmi jelenet és a bolt előnézetének megjelenését módosítják. Játékbeli előnyt nem adnak.
-- A vásárlás **csak játékbeli érmével**, valódi pénz nélkül történik. Nincsenek reklámok, személyes adatkérések vagy hálózati szolgáltatások.
+- **Bemenetellenőrzés:** a begépelt válasz csak 0 és 1000 közötti egész szám lehet. Ha valaki 1001-et vagy 9999-et ír, ezt a játék jelzi, de nem számolja matematikai hibának.
+- **Billentyűzetes kezelés:** válaszadás után a következő fontos vezérlőre kerül a fókusz, így nem kell újra a teljes oldal elejéről tabulátorozni.
+- **Mentésvédelem:** a főmenü alján a „Mentéseim letöltése” egy `szammester-1000-mentes.json` nevű fájlt hoz létre, amely csak a Számmester helyi tárolókulcsait tartalmazza. A „Mentés visszaállítása” vissza tudja tölteni a játékba a saját mentésfájlt. A rendszer előzetes megerősítést kér és ellenőrzi a fájl szerkezetét.
+- **Stabilabb kiadás:** új verziószám a HTML-ben és a külső fájlok hivatkozásaiban (`v=10`), ami segít a böngészőnek felismerni a frissítést.
 
-## Mentés és biztonság
+## Mit ellenőriztünk?
 
-A pénztárca korábbi `szammester1000_rewards_v5_<szint>` helyi mentéséhez hozzáadtunk egy `shop` mezőt, így a levonás és a megvásárolt tárgyak *együtt, egy mentéssel* íródnak. A kalandmentés, az érmek és a V6 hibagyakorlás mentési kulcsai **nem változtak**. Minden nehézségi szintnek külön pénztárcája és felszerelése van. A V9 új kulcson megőrzi, melyik szint volt utoljára kiválasztva. A mentések **ugyanabban a böngészőben és ugyanazon a GitHub Pages webcímen** érhetők el, nem szinkronizálódnak eszközök között. A böngészőadatok törlése a mentéseket is eltávolíthatja.
+- 360 000 véletlenszerű matematikai feladateset: generált megoldások, válaszlehetőségek, számhatárok.
+- Teljes V9 regressziós vizsgálat: bolt csak 7 teljesített birodalom és 7 főellenfél után; vásárlás egyszer von le érmét; kiegészítők visszatöltése; nehézségi szintek elkülönítése; régi gyakorlási módok.
+- V10 külön tesztek: 0–1000 bevitel, hibakövetés, billentyűzetes fókusz, JSON mentés export és import, sérült mentés visszautasítása, böngészőbeli újranyitás, mobilos szélesség.
 
-## GitHubra telepítés
+Az automatizált tesztek nem helyettesítik a gyermekkel történő tényleges kipróbálást.
 
-1. Csomagold ki a ZIP-et, próbáld ki az `index.html` fájlt (a helyben megnyitott fájl nem ugyanazt a mentést látja, mint a GitHub Pages).
-2. Nyisd meg: https://github.com/hajgre/szammester-1000
-3. A tároló főmappájában **Add file → Upload files**, és cseréld le a négy fájlt: `index.html`, `style.css`, `app.js`, `README.md`.
-4. Commit üzenet: `V9 – Karakterbolt a teljes kaland végén`.
-5. Az élő cím: https://hajgre.github.io/szammester-1000/ . Ha még a V8 jelenik meg, Ctrl+F5.
+## GitHub Pages – frissítés
 
-## Próbáld ki
+1. ZIP kibontása.
+2. A négy fájl (`index.html`, `style.css`, `app.js`, `README.md`) feltöltése a már meglévő `hajgre/szammester-1000` repository **gyökérmappájába**, a régiek felülírásával.
+3. Commit: `V10 – Nagy játékellenőrzés és mentésvédelem`.
+4. Webhely: `https://hajgre.github.io/szammester-1000/` – ha szükséges, frissíts Ctrl+F5 billentyűkkel.
 
-A játék közben a karakterbolt szürke/zárolt. Mind a hét kapu és mind a hét főellenfél után feloldódik. Vásárolj egy 35 érmés Kalandorsapkát, válassz másik sapkát, majd vedd vissza ingyen. Ellenőrizd, hogy a pályán megjelenik-e. Minden nehézségi szint külön teljesíthető.
+## Ajánlott kézi tesztlista
+
+- [ ] A régi csillagok, birodalmak, jelvények és érmék változatlanok.
+- [ ] Beváltásnál `1001` beírásakor hibaüzenetet látok, de nem vesztek csillagot.
+- [ ] Egy helytelen matematikai válasz megjelenik a „Hibáimból tanulok” műhelyben.
+- [ ] A karakterbolt a végső győzelem előtt zárva, utána nyitva van.
+- [ ] Megvett kiegészítő visszatöltés után is megvan.
+- [ ] A főmenü alján működik a mentések `.json` fájlba letöltése.
+- [ ] A mentések a „Mentés visszaállítása” gombbal visszatölthetők.
+- [ ] Telefonon/tableten kényelmesen olvasható a játék.
+
+## Tudnivalók a mentésről
+
+A játék eredményeit a böngésző `localStorage` tárhelye őrzi, **nem a GitHub**, ezért a GitHub-frissítés önmagában nem törli őket. Fontos, hogy ugyanazon az oldalon és böngészőben folytassátok a játékot. A külön megnyitott helyi `index.html` fájl ettől független tárhelyet használhat.
+
+A privát/inkognitó mód vagy a böngésző adatainak törlése elveszítheti a haladást. A V10 megnyitása után érdemes rögtön biztonsági mentést letölteni. A `.json` fájlban eredmények és játékadatok vannak; **ne töltsd fel nyilvános GitHub-repositoryba**, és csak a saját mentésfájlodat importáld. A visszaállítás az azonos nevű helyi mentéseket felülírja, de a biztonsági másolatban nem szereplő kulcsokat nem törli.
+
+A játék továbbra is reklám- és regisztrációmentes; valódi pénzes vásárlás vagy külső adatküldés nincs.

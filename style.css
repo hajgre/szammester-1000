@@ -602,3 +602,18 @@ body { background:radial-gradient(circle at 4% 10%,#365ba3 0,transparent 30%),ra
 @media(max-width:930px){.shop-products{grid-template-columns:repeat(2,minmax(0,1fr));}.shop-teaser{grid-template-columns:63px minmax(0,1fr);}.shop-teaser-icon{width:58px;height:58px;font-size:30px;}.shop-teaser>button{grid-column:2;justify-self:start;}}
 @media(max-width:640px){.shop-teaser{margin:18px 16px;padding:16px;gap:12px;grid-template-columns:49px minmax(0,1fr);}.shop-teaser-icon{width:47px;height:47px;font-size:25px;border-radius:12px;}.shop-teaser h2{font-size:18px;}.shop-teaser>button{grid-column:1/-1;width:100%;justify-self:stretch;}.shop-teaser-stats span{font-size:10px;}.shop-header{padding:23px 17px 27px;}.shop-header h1{font-size:35px;}.shop-top-grid{grid-template-columns:1fr;gap:12px;}.shop-dressing{min-height:176px;}.shop-dressing-scene{width:135px;height:148px;}.shop-products{grid-template-columns:1fr;gap:13px;}.shop-product-art{height:151px;}.shop-section-head{align-items:start;}.shop-count-tag{display:none;}.shop-wallet-number{font-size:46px;}.shop-content{padding:26px 15px;}}
 @media(prefers-reduced-motion:reduce){.shop-dressing-spark,.block-avatar--shop-hero{animation:none!important}.shop-product{transition:none!important}}
+
+/* V10 – a biztonsági mentés kezelése, az alapjáték dizájnjának megőrzésével. */
+.backup-feature{margin:28px 32px 34px;padding:22px 24px;display:flex;align-items:flex-start;gap:20px;border:2px solid #c8dece;border-radius:23px;background:linear-gradient(120deg,#f3fff8,#e6f8ef);box-shadow:0 7px 0 #22584a13;color:#294e49}
+.backup-symbol{display:grid;place-items:center;flex:none;width:65px;height:65px;border:2px solid #c9e3d2;border-radius:16px;background:#fff;font-size:31px}
+.backup-body{min-width:0;flex:1}.backup-kicker{font-size:11px;font-weight:950;letter-spacing:1.2px;color:#397e6e}
+.backup-feature h2{margin:4px 0 8px;color:#24594c;font-size:clamp(19px,3vw,25px)}
+.backup-feature p{line-height:1.55;font-size:13px;color:#43665c;margin:0 0 12px}
+.backup-actions{display:flex;flex-wrap:wrap;gap:9px;margin:15px 0 11px}
+.backup-download,.backup-restore{border:0;border-radius:11px;padding:12px 15px;font-family:inherit;font-size:13px;font-weight:900;cursor:pointer}
+.backup-download{background:#26775d;color:#fff;box-shadow:0 3px 0 #14513e}.backup-restore{background:#fff;color:#275b4a;border:1px solid #a6cdbc}
+.backup-feature .backup-help{font-size:11px;color:#567365;margin:0}
+.backup-feature .backup-status{background:#fff;border:1px solid #b9d4c3;border-radius:10px;padding:10px 12px;margin-top:10px;font-weight:750}
+button:focus-visible, input:focus-visible, .brand:focus-visible{outline:3px solid #edb036;outline-offset:3px}
+@media(max-width:640px){.backup-feature{margin:20px 16px;gap:12px;padding:17px 15px}.backup-symbol{width:44px;height:44px;font-size:24px}.backup-actions{display:grid}.backup-download,.backup-restore{width:100%}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
