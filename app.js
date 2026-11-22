@@ -1,6 +1,6 @@
 'use strict';
 
-// Számmester 1000 V5 – kincsvadászat, jutalommezők, hangok, főellenfelek.
+// Számmester 1000 V6 – okos gyakorlás, kincsvadászat, jutalmak és főellenfelek.
 // Nem hivatalos Roblox-termék; nincsenek külső képek vagy játékosadat-kérések.
 // 1. A feladatokat a makeQuestion() készíti.
 // 2. A render() rajzolja ki a játékot.
@@ -44,6 +44,10 @@ const HERO_SAVE_KEY = 'szammester1000_board_hero_v3';
 const REWARDS_SAVE_KEY = 'szammester1000_rewards_v5_';
 const SOUND_SAVE_KEY = 'szammester1000_sound_v5';
 const BOSS_QUESTIONS = 2;
+// V6: önálló hibagyakorlási mentés minden nehézségi szinthez.
+const SMART_SAVE_KEY = 'szammester1000_smart_v6_';
+const SMART_QUEUE_LIMIT = 60;
+const SMART_REVIEWS_TO_MASTER = 2;
 const BOSSES = [
   {name:'Számzavaró Manó', icon:'👹', badge:'Számmező hőse', motto:'A sorrend titkát senki sem fejti meg!', type:'moss'},
   {name:'A Tízes Torony Robotja', icon:'🤖', badge:'Helyiérték-védő', motto:'Találd meg a számjegyek helyét!', type:'steel'},
@@ -66,7 +70,8 @@ const state = {
   feedback: null, lastChoice: null, chosenTick: null, best: 0,
   playKind: 'practice', adventureStage: 0, adventureData: null, hero: 'fox', boardAnimationFrom: null,
   rewardData: null, rewardTile: -1, rewardReturn: 'map', rewardClaimed: false, rewardAmount: 0,
-  bossStageStars: 0, bossNewBadge: false, bossCoins: 0, soundEnabled: false
+  bossStageStars: 0, bossNewBadge: false, bossCoins: 0, soundEnabled: false,
+  autoSmartScheduled: 0, reviewWins: 0, reviewMastered: 0, reviewTopic: 'all', reviewFeedback: ''
 };
 
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -242,6 +247,150 @@ function blockAvatar(heroId, size = 'default', celebration = false) {
     <span class="avatar-head"><span class="avatar-ears"></span><span class="avatar-eye avatar-eye-left"></span><span class="avatar-eye avatar-eye-right"></span><span class="avatar-smile"></span></span>
   </span>`;
 }
+// --- V6: az elrontott feladatok ismétlődő, helyben tárolt gyakorlása ---
+// Minden nehézségi szinthez külön lista tartozik. A korábbi V1-V5 kulcsokat nem írjuk át.
+function smartFresh() { return { queue: [], mastered: 0, wrongTotal: 0 }; }
+function smartQuestionCore(question) {
+  // A kijelzőn felbukkanó, eredetileg generált feladat pontos másolata.
+  const cloned = { ...question };
+  delete cloned.__smartId;
+  return cloned;
+}
+function smartQuestionId(question) {
+  const q=smartQuestionCore(question);
+  // A kanonikus válaszokból készülő stabil azonosító. Nem igényel hálózatot.
+  return JSON.stringify([q.type,q.number,q.highlight,q.n,q.start,q.step,q.targetIndex,
+    q.expression,q.numbers,q.answer,q.title]);
+}
+function smartRead() {
+  const d=smartFresh();
+  try {
+    const saved=JSON.parse(window.localStorage.getItem(SMART_SAVE_KEY+state.level)||'null');
+    if (!saved || !Array.isArray(saved.queue)) return d;
+    d.mastered=Number.isSafeInteger(saved.mastered)?Math.max(0,saved.mastered):0;
+    d.wrongTotal=Number.isSafeInteger(saved.wrongTotal)?Math.max(0,saved.wrongTotal):0;
+    d.queue=saved.queue.filter(entry=>entry && typeof entry==='object' &&
+      entry.q && typeof entry.q==='object' && ADVENTURE_STAGES.some(m=>m.id===entry.q.type) &&
+      typeof entry.q.title==='string' && typeof entry.q.explain==='string' &&
+      entry.q.title.length<400 && entry.q.explain.length<800 &&
+      typeof entry.id==='string' && entry.id===smartQuestionId(entry.q))
+      .slice(0,SMART_QUEUE_LIMIT).map(entry=>({
+        id:entry.id, q:smartQuestionCore(entry.q),
+        successes:Math.max(0,Math.min(1,Number(entry.successes)||0)),
+        wrongs:Math.max(1,Math.min(999,Number(entry.wrongs)||1)),
+        last:Number.isFinite(entry.last)?entry.last:0
+      }));
+  } catch(error) { /* Tárhely tiltásakor is játszható marad. */ }
+  return d;
+}
+function smartWrite(d) {
+  try { window.localStorage.setItem(SMART_SAVE_KEY+state.level,JSON.stringify(d)); }
+  catch(error) { /* Nem érinti a V5 játékmenetet. */ }
+}
+function smartPendingCount(topic='all') {
+  return smartRead().queue.filter(e=>topic==='all'||e.q.type===topic).length;
+}
+function smartQuestion(entry) { return {...smartQuestionCore(entry.q), __smartId:entry.id}; }
+function insertSavedSmartQuestions(questions, topic) {
+  const chosen=smartRead().queue.filter(e=>topic==='mixed'||e.q.type===topic)
+    .sort((a,b)=>a.successes-b.successes || a.last-b.last).slice(0,2);
+  const indices=[3,7];
+  chosen.forEach((entry,i)=>{if(indices[i]<questions.length)questions[indices[i]]=smartQuestion(entry);});
+  return questions;
+}
+function smartRememberMistake(q) {
+  const d=smartRead(), id=smartQuestionId(q);
+  let entry=d.queue.find(e=>e.id===id);
+  if (!entry) {
+    entry={id,q:smartQuestionCore(q),successes:0,wrongs:1,last:Date.now()};
+    if (d.queue.length>=SMART_QUEUE_LIMIT) d.queue.shift();
+    d.queue.push(entry);
+  } else {
+    entry.successes=0; entry.wrongs+=1; entry.last=Date.now();
+  }
+  d.wrongTotal+=1;
+  smartWrite(d);
+  // A sima gyakorlásban egy hibás feladat 3 későbbi kérdéssel ismét megjelenhet.
+  // A kaland és a főellenfél rögzített 5/2 feladatos menetéhez nem nyúlunk.
+  if (state.playKind==='practice' && !q.__smartId && state.autoSmartScheduled<2) {
+    for (let k=state.index+3;k<state.questions.length;k++) {
+      if (!state.questions[k].__smartId) {
+        state.questions[k]=smartQuestion(entry);
+        state.autoSmartScheduled+=1;
+        break;
+      }
+    }
+  }
+}
+function smartRewardReview(q) {
+  if (!q.__smartId) return '';
+  const d=smartRead(), entry=d.queue.find(e=>e.id===q.__smartId);
+  if (!entry) return '';
+  if (state.mistakes) return 'A helyes megoldás után még gyakoroljuk ezt a feladatot.';
+  entry.successes+=1;
+  if (state.playKind==='review') state.reviewWins+=1;
+  if (entry.successes>=SMART_REVIEWS_TO_MASTER) {
+    d.queue=d.queue.filter(e=>e.id!==entry.id);
+    d.mastered+=1;
+    if (state.playKind==='review') state.reviewMastered+=1;
+    smartWrite(d);
+    return '🏅 Kétszer önállóan sikerült! Ezt a feladatot már megtanultad.';
+  }
+  entry.last=Date.now();
+  smartWrite(d);
+  return '🌱 Megvan az első önálló jó megoldás! Egy későbbi körben még egyszer ellenőrizzük.';
+}
+function renderSmartHub() {
+  const d=smartRead();
+  const count=smartPendingCount(state.reviewTopic);
+  const all=d.queue.length;
+  app.innerHTML=`<section class="smart-hub">
+    <button type="button" class="text-button" data-action="home">← Vissza a főmenübe</button>
+    <div class="smart-hub-title"><span class="smart-hub-icon" aria-hidden="true">🧠</span>
+      <div><p class="eyebrow">V6 • OKOS GYAKORLÁS</p><h1>Hibáimból tanulok</h1>
+      <p>Nem baj, ha valami elsőre nem sikerül. A feladatot félretesszük, és később újra elővesszük. Két külön alkalommal, segítség nélkül adott jó válasz után lekerül a gyakorlólistáról.</p></div>
+    </div>
+    <div class="smart-counters"><div><span>📌</span><strong>${all}</strong><small>gyakorlásra vár</small></div>
+      <div><span>🏅</span><strong>${d.mastered}</strong><small>már megtanultad</small></div>
+      <div><span>🔄</span><strong>${d.queue.filter(e=>e.successes===1).length}</strong><small>még egy jó válasz kell</small></div></div>
+    <div class="smart-pick-level"><strong>Válassz nehézséget!</strong>
+      <div class="level-buttons">${LEVELS.map((lev,i)=>`<button type="button" class="level-button ${state.level===i?'selected':''}" data-action="review-level" data-level="${i}" aria-pressed="${state.level===i}">${lev.emoji} ${lev.name}</button>`).join('')}</div></div>
+    <h2>Melyik témakört gyakoroljuk?</h2>
+    <div class="smart-topic-grid">
+      <button type="button" class="smart-topic ${state.reviewTopic==='all'?'chosen':''}" data-action="review-topic" data-topic="all" aria-pressed="${state.reviewTopic==='all'}"><span>🌈</span><strong>Mindegyik témakör</strong><small>${all} feladat</small></button>
+      ${ADVENTURE_STAGES.map(mode=>`<button type="button" class="smart-topic ${state.reviewTopic===mode.id?'chosen':''}" data-action="review-topic" data-topic="${mode.id}" aria-pressed="${state.reviewTopic===mode.id}"><span>${mode.emoji}</span><strong>${mode.name}</strong><small>${smartPendingCount(mode.id)} feladat</small></button>`).join('')}
+    </div>
+    <div class="smart-launch">
+      <div><strong>${count?`${count} feladat vár a kiválasztott témában`:'Minden feladatod rendben van! 🎉'}</strong>
+      <p>${count?'Egy körben legfeljebb 5 különböző hibás feladat jön elő. Nincs időkorlát és érmelevonás.':'Játssz egy szokásos kört! Ha valami nem sikerül, megjelenik itt a gyakorlólistádban.'}</p></div>
+      <button type="button" class="primary-button" data-action="review-start" ${count?'':'disabled'}>🔁 ${count?'Ismétlés indítása':'Most nincs ismételnivaló'}</button>
+    </div>
+    <p class="smart-privacy">🔐 A gyakorlólista kizárólag ebben a böngészőben tárolódik. Név, fiók és internetkapcsolat nem szükséges; más eszközön nem jelenik meg automatikusan.</p>
+  </section>`;
+}
+function beginSmartReview() {
+  const entries=smartRead().queue.filter(e=>state.reviewTopic==='all'||e.q.type===state.reviewTopic)
+    .sort((a,b)=>a.successes-b.successes || a.last-b.last).slice(0,5);
+  if (!entries.length) { state.view='smart'; render(); return; }
+  state.playKind='review';
+  state.mode=state.reviewTopic==='all'?'mixed':state.reviewTopic;
+  state.questions=entries.map(smartQuestion);
+  state.index=0; state.stars=0; state.reviewWins=0; state.reviewMastered=0;
+  state.view='game'; resetQuestionState(); render();
+}
+function renderSmartResult() {
+  const d=smartRead();
+  app.innerHTML=`<section class="result-screen smart-result">
+    <div class="result-emoji" aria-hidden="true">🧠</div>
+    <p class="eyebrow">ISMETLŐ KÖR TELJESÍTVE</p><h1>Szép munka, tanultál a hibákból!</h1>
+    <p>A gyakorlás célja a megértés, nem a gyorsaság. Minden visszatérő feladattal egyre biztosabb lesz a tudásod.</p>
+    <div class="smart-counters"><div><span>✅</span><strong>${state.reviewWins}</strong><small>elsőre jó válasz</small></div>
+      <div><span>🏅</span><strong>${state.reviewMastered}</strong><small>most megtanult feladat</small></div>
+      <div><span>📌</span><strong>${d.queue.length}</strong><small>még gyakorolható</small></div></div>
+    <div class="result-buttons"><button type="button" class="primary-button" data-action="review-home">🧠 Gyakorlóműhely</button><button type="button" class="secondary-button" data-action="home">Főmenü</button></div>
+    <p class="info-bar">Egy elrontott feladat csak két külön ismétlés során adott, elsőre helyes válasz után kerül le a listáról. A kincsek, főellenfelek és kalandmentések érintetlenek maradnak.</p>
+  </section>`;
+}
 function renderHome() {
   app.innerHTML = `
     <section class="home-hero">
@@ -255,11 +404,18 @@ function renderHome() {
     <section class="adventure-feature" aria-label="Új kalandmód">
       <div class="adventure-feature-icon block-feature-icon" aria-hidden="true">${blockAvatar(state.hero, 'feature')}</div>
       <div class="adventure-feature-text">
-        <span class="adventure-kicker">V5 • KINCSVADÁSZAT</span>
+        <span class="adventure-kicker">V6 • KINCSVADÁSZAT + OKOS GYAKORLÁS</span>
         <h2>Számország: Kincsvadászat</h2>
         <p>Fedezd fel a 35 mezős blokkvilágot! Nyiss 14 kincsesládát, találj 7 meglepetésmezőt, és győzd le a 7 birodalom főellenfelét!</p>
       </div>
       <button type="button" class="adventure-enter" data-action="map">Induljon a kaland! →</button>
+    </section>
+    <section class="smart-feature" aria-label="Okos gyakorlás">
+      <div class="smart-feature-mark" aria-hidden="true">🧠</div>
+      <div><span class="smart-small-heading">ÚJDONSÁG • V6</span><h2>Hibáimból tanulok</h2>
+      <p>A nehezebb feladatok nem vesznek el! Később újra kérdezzük őket, amíg kétszer önállóan jól nem sikerülnek.</p>
+      <div class="smart-feature-stats"><span>📌 ${smartPendingCount()} gyakorlásra vár</span><span>🏅 ${smartRead().mastered} megtanult feladat</span></div></div>
+      <button class="smart-enter" type="button" data-action="review-home">Irány a gyakorlóműhely →</button>
     </section>
     <section class="home-body" aria-label="Játék beállításai">
       <div class="section-head"><h2>🎮 Válassz egy küldetést!</h2><span>8 játékmód</span></div>
@@ -281,7 +437,7 @@ function renderHome() {
           <p class="start-note">10 feladat · Nincs időkorlát · Bármikor újrakezdhető</p>
         </div>
       </div>
-      <div class="info-bar">💡 <strong>Tipp:</strong> Hibázni ér! Minden kérdésnél újrapróbálkozhatsz, és a helyes megoldás után magyarázatot is kapsz.</div>
+      <div class="info-bar">💡 <strong>Tipp:</strong> Hibázni ér! A V6 megjegyzi az elrontott feladatokat, és később újra megmutatja őket. A kaland mentései, érméi és jelvényei változatlanok.</div>
     </section>`;
 }
 function beginGame() {
@@ -290,10 +446,11 @@ function beginGame() {
   const sequence = state.mode === 'mixed'
     ? shuffle([...types, ...Array.from({ length: QUESTIONS_PER_GAME - types.length }, () => pick(types))])
     : Array(QUESTIONS_PER_GAME).fill(state.mode);
-  state.questions = sequence.map(type => makeQuestion(type, state.level));
+  state.questions = insertSavedSmartQuestions(sequence.map(type => makeQuestion(type, state.level)), state.mode);
   state.view = 'game';
   state.index = 0;
   state.stars = 0;
+  state.autoSmartScheduled = state.questions.filter(q => q.__smartId).length;
   resetQuestionState();
   render();
 }
@@ -305,6 +462,7 @@ function resetQuestionState() {
   state.feedback = null;
   state.lastChoice = null;
   state.chosenTick = null;
+  state.reviewFeedback = '';
 }
 
 // --- V5: külön mentett jutalmak, továbbra is csak ezen a böngészőn ---
@@ -722,7 +880,7 @@ function renderAdventureMap() {
   const position=boardPosition(progress);
   app.innerHTML = `<section class="adventure-hero board-hero">
     <button class="text-button adventure-back" type="button" data-action="home">← Vissza a főmenübe</button>
-    <p class="eyebrow">🎁 KINCSVADÁSZAT • 5. VERZIÓ</p>
+    <p class="eyebrow">🎁 KINCSVADÁSZAT • V6</p>
     <h1>Számország <span>kincsvadászata</span></h1>
     <p>Járd be a hét blokk-birodalmat! Oldj meg matekfeladatokat, nyiss kincsesládákat, gyűjts jelvényeket, és győzd le a hét főellenfelet. <strong>Minden helyes megoldás egy mezővel visz előrébb.</strong></p>
     <div class="adventure-hero-stats"><span>🎲 ${position} / 35 mező</span><span>🔓 ${done} / 7 kapu</span><span>⭐ ${totalStars} / 35 csillag</span><span>🪙 ${state.rewardData.coins} érme</span><span>🏅 ${state.rewardData.bosses.filter(Boolean).length} / 7 jelvény</span></div>
@@ -733,6 +891,7 @@ function renderAdventureMap() {
       <div class="level-buttons adventure-level-buttons" role="group" aria-label="Kaland nehézsége">${LEVELS.map((lev,i)=>`<button type="button" class="level-button ${state.level===i?'selected':''}" data-action="map-level" data-level="${i}" aria-pressed="${i===state.level}">${lev.emoji} ${lev.name}</button>`).join('')}</div>
     </div>
     <div class="reward-sound-row"><span>🎵 A hangeffektek szabadon ki-be kapcsolhatók.</span>${soundButton()}</div>
+    <div class="smart-map-link"><div><strong>🧠 Hibáimból tanulok</strong><p>${smartPendingCount()} feladat vár ismétlésre ezen a nehézségi szinten.</p></div><button type="button" class="secondary-button" data-action="review-home">Gyakorlóműhely →</button></div>
     <div class="hero-picker voxel-hero-picker"><strong>🧍 Válassz egy blokk-hőst!</strong><div class="hero-options" role="group" aria-label="Játékbábu kiválasztása">${HEROES.map(hero=>`<button type="button" class="hero-option ${state.hero===hero.id?'active':''}" data-action="hero" data-hero="${hero.id}" aria-pressed="${state.hero===hero.id}">${blockAvatar(hero.id,'picker')}<span class="hero-name">${hero.name}</span></button>`).join('')}</div></div>
     ${state.rewardData.bossDraft?`<div class="adventure-resume boss-resume"><div><strong>⚔️ Félbehagyott főellenfél!</strong><span>${BOSSES[state.rewardData.bossDraft.stage].name}</span></div><button type="button" class="primary-button" data-action="boss" data-stage="${state.rewardData.bossDraft.stage}">Folytatom →</button></div>`:''}
     ${draft && !state.rewardData.bossDraft ? `<div class="adventure-resume"><div><strong>📌 Félbehagyott küldetésed van</strong><span>${ADVENTURE_STAGES[draft.stage].name} · ${draft.index+1}. feladat az 5-ből</span></div><button type="button" class="primary-button" data-action="stage" data-stage="${draft.stage}">Folytatom →</button></div>` : ''}
@@ -764,7 +923,7 @@ function renderAdventureResult() {
     <div class="victory-prizes"><span>⭐ ${state.stars} / 5 csillag</span><span>🏅 ${boss.badge}</span><span>🪙 ${state.bossNewBadge?'+25 új érme':'A jelvény már megvolt'}</span></div>
     <p class="best-score">A birodalom eddigi legjobb eredménye: ${state.adventureData.best[stage]} / 5 csillag.</p>
     <div class="result-buttons">${last?'':`<button type="button" class="primary-button" data-action="next-stage">Következő birodalom →</button>`}
-       <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button></div>
+       <button type="button" class="secondary-button" data-action="map">🗺️ Vissza a térképhez</button><button type="button" class="secondary-button" data-action="review-home">🧠 Hibáimból tanulok (${smartPendingCount()})</button></div>
     <p class="info-bar">Minden főellenfél gyakorolható újra. Az érméket és a jelvényeket az első győzelemért kapod, így nincsen végtelen jutalomgyűjtés.</p>
   </section>`;
 }
@@ -830,21 +989,23 @@ function renderGame() {
   const q = state.questions[state.index];
   const progress = Math.round((state.index / state.questions.length) * 100);
   const bossMode=state.playKind==='boss';
+  const reviewing=state.playKind==='review';
   app.innerHTML = `<div class="game-wrap ${bossMode?'game-boss':''}">
-    <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure'||bossMode ? 'map' : 'home'}">← ${state.playKind === 'adventure'||bossMode ? 'Vissza a térképhez' : 'Vissza a főmenübe'}</button><span class="stars">${bossMode?'⚔️ Főellenfél harc':`⭐ ${state.stars} csillag`}</span>${soundButton()}</div>
+    <div class="game-topline"><button type="button" class="text-button" data-action="${state.playKind === 'adventure'||bossMode ? 'map' : reviewing ? 'review-home' : 'home'}">← ${state.playKind === 'adventure'||bossMode ? 'Vissza a térképhez' : reviewing ? 'Vissza a gyakorlóműhelybe' : 'Vissza a főmenübe'}</button><span class="stars">${bossMode?'⚔️ Főellenfél harc':reviewing?'🧠 Ismétlő kör':`⭐ ${state.stars} csillag`}</span>${soundButton()}</div>
     ${state.playKind === 'adventure' ? `<div class="adventure-game-label">🎲 Számország · ${state.adventureStage + 1}. kapu a 7-ből</div>${renderBoardMini()}` : bossMode?renderBossArena():''}
     <div class="game-meta"><span>${MODES.find(m => m.id === state.mode).name} · ${LEVELS[state.level].name}</span><span>${state.index + 1} / ${state.questions.length}. ${bossMode?'főellenfél-feladat':'feladat'}</span></div>
     <div class="progress-track" role="progressbar" aria-valuenow="${state.index}" aria-valuemin="0" aria-valuemax="${state.questions.length}" aria-label="A játék előrehaladása"><div class="progress-fill" style="width: ${progress}%"></div></div>
     <section class="question-box" aria-label="Aktuális feladat">
       <span class="question-tag">${q.label}</span>
+      ${q.__smartId ? '<span class="smart-question-tag">🧠 Visszatérő gyakorlófeladat</span>' : ''}
       <h2 class="question-title">${q.title}</h2>
       <p class="question-hint">${q.hint}</p>
       ${renderQuestionContents(q)}
     </section>
     <div id="answer-feedback" aria-live="polite" aria-atomic="true">
-      ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? (bossMode?'⚔️ Talált! Sérült a főellenfél!':'🌟 Ügyes vagy, jó megoldás!') : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}${state.feedback.type === 'success' && state.playKind === 'adventure' ? '<span class="answer-confetti" aria-hidden="true">✦ ✨ ✦</span>' : ''}</div>` : ''}
+      ${state.feedback ? `<div class="feedback ${state.feedback.type}"><strong>${state.feedback.type === 'success' ? (bossMode?'⚔️ Talált! Sérült a főellenfél!':'🌟 Ügyes vagy, jó megoldás!') : '💡 Próbáld meg még egyszer!'}</strong>${state.feedback.text}${state.feedback.type==='success' && state.reviewFeedback ? `<div class="smart-inline-feedback">${state.reviewFeedback}</div>` : ''}${state.feedback.type === 'success' && state.playKind === 'adventure' ? '<span class="answer-confetti" aria-hidden="true">✦ ✨ ✦</span>' : ''}</div>` : ''}
     </div>
-    ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${bossMode?(state.index===BOSS_QUESTIONS-1?'Főellenfél legyőzése 🏆':'Következő támadás ⚔️'):pendingRewardTile()>=0?'Jutalommező felfedezése 🎁':state.index === state.questions.length - 1 ? (state.playKind === 'adventure' ? 'Főellenfél kihívása ⚔️' : 'Eredmény megtekintése 🏆') : 'Következő feladat →'}</button></div>` : ''}
+    ${state.locked ? `<div class="question-footer"><button type="button" class="primary-button" data-action="next">${bossMode?(state.index===BOSS_QUESTIONS-1?'Főellenfél legyőzése 🏆':'Következő támadás ⚔️'):reviewing?(state.index===state.questions.length-1?'Ismétlés eredménye 🧠':'Következő gyakorlófeladat →'):pendingRewardTile()>=0?'Jutalommező felfedezése 🎁':state.index === state.questions.length - 1 ? (state.playKind === 'adventure' ? 'Főellenfél kihívása ⚔️' : 'Eredmény megtekintése 🏆') : 'Következő feladat →'}</button></div>` : ''}
   </div>`;
 }
 function storeBestScore() {
@@ -871,7 +1032,7 @@ function renderResult() {
     <p>${message}</p>
     <div class="score-large" aria-label="${state.stars} a ${QUESTIONS_PER_GAME} csillagból">⭐ ${state.stars}<span> / ${QUESTIONS_PER_GAME}</span></div>
     <div class="best-score">🏅 Legjobb eredmény ebben a módban: ${state.best} / ${QUESTIONS_PER_GAME}</div>
-    <div class="result-buttons"><button type="button" class="primary-button" data-action="restart">🔁 Játssz újra!</button><button type="button" class="secondary-button" data-action="home">Másik küldetést választok</button></div>
+    <div class="result-buttons"><button type="button" class="primary-button" data-action="restart">🔁 Játssz újra!</button><button type="button" class="secondary-button" data-action="home">Másik küldetést választok</button><button type="button" class="secondary-button" data-action="review-home">🧠 Hibáimból tanulok (${smartPendingCount()})</button></div>
     <p class="info-bar">A csillag akkor jár, ha a feladat első próbálkozásra sikerül. Hibázás után is nyugodtan újrapróbálkozhatsz: a legfontosabb, hogy megértsd a megoldást.</p>
   </section>`;
 }
@@ -882,6 +1043,8 @@ function render() {
   if (state.view === 'map') renderAdventureMap();
   if (state.view === 'adventure-result') renderAdventureResult();
   if (state.view === 'reward') renderReward();
+  if (state.view === 'smart') renderSmartHub();
+  if (state.view === 'smart-result') renderSmartResult();
 }
 function tryAnswer(correct, userFriendlyError) {
   const q = state.questions[state.index];
@@ -896,11 +1059,13 @@ function tryAnswer(correct, userFriendlyError) {
         writeRewardData();
       }
     }
-    if (!state.mistakes) state.stars += 1;
+    if (q.__smartId) state.reviewFeedback=smartRewardReview(q);
+    if (!state.mistakes && state.playKind!=='review') state.stars += 1;
     playSound(state.playKind==='boss'?'boss':'correct');
     state.locked = true;
     state.feedback = { type: 'success', text: q.explain };
   } else {
+    if (!state.mistakes) smartRememberMistake(q);
     state.mistakes = true;
     state.feedback = { type: 'error', text: userFriendlyError || q.tip };
     playSound('error');
@@ -915,13 +1080,13 @@ function handleSubmit(form) {
   if (form.dataset.form === 'exchange') {
     const answer = String(form.elements.answer.value).trim();
     state.inputs = { answer };
-    if (!checkInteger(answer)) return tryAnswer(false, 'Csak egy 0 és 1000 közötti egész számot írj be!');
+    if (!checkInteger(answer)) { state.feedback={type:'error',text:'Csak egy 0 és 1000 közötti egész számot írj be!'};render();return; }
     tryAnswer(Number(answer) === q.answer);
   } else if (form.dataset.form === 'neighbors') {
     const low = String(form.elements.low.value).trim();
     const high = String(form.elements.high.value).trim();
     state.inputs = { low, high };
-    if (!checkInteger(low) || !checkInteger(high)) return tryAnswer(false, 'Mindkét mezőbe írj egy egész számot!');
+    if (!checkInteger(low) || !checkInteger(high)) { state.feedback={type:'error',text:'Mindkét mezőbe írj egy egész számot!'};render();return; }
     tryAnswer(Number(low) === q.answer[0] && Number(high) === q.answer[1]);
   }
 }
@@ -934,6 +1099,10 @@ app.addEventListener('click', event => {
   if (!button || !app.contains(button)) return;
   const action = button.dataset.action;
   if (action === 'map') { openAdventureMap(); return; }
+  if (action==='review-home') { state.view='smart';state.reviewTopic='all';render();return; }
+  if (action==='review-level') { const level=Number(button.dataset.level);if(level>=0 && level<LEVELS.length) {state.level=level;render();} return; }
+  if (action==='review-topic') { const topic=button.dataset.topic;if(topic==='all'||ADVENTURE_STAGES.some(m=>m.id===topic)){state.reviewTopic=topic;render();}return; }
+  if (action==='review-start') { if(state.view==='smart')beginSmartReview();return; }
   if (action==='sound') {
     state.soundEnabled=!state.soundEnabled;
     try { window.localStorage.setItem(SOUND_SAVE_KEY, state.soundEnabled?'on':'off'); } catch(error) {}
@@ -982,6 +1151,7 @@ app.addEventListener('click', event => {
     state.index+=1;
     if (state.index>=state.questions.length) {
       if (state.playKind==='boss') { completeBossFight(); return; }
+      if (state.playKind==='review') { state.view='smart-result';render();return; }
       if (state.playKind==='adventure') { startBossFight(state.adventureStage,state.stars); return; }
       storeBestScore(); state.view='result';
     } else resetQuestionState();
